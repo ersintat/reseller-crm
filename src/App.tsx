@@ -17,7 +17,7 @@ const initialEmployeeCommissions = generateEmployeeCommissionsForStatements(
 );
 
 export function App() {
-  const [role, setRole] = useState<Role>('admin');
+  const [role, setRole] = useState<Role>(() => loadFromStorage<Role>('role', 'admin'));
   // TODO: Replace localStorage persistence with Supabase persistence in production.
   const [statements, setStatements] = useState<Statement[]>(() => loadFromStorage('statements', initialStatements));
   const [transactions, setTransactions] = useState<SettlementTransaction[]>(() => loadFromStorage('transactions', initialTransactions));
@@ -32,6 +32,7 @@ export function App() {
 
   useEffect(() => { saveToStorage('statements', statements); }, [statements]);
   useEffect(() => { saveToStorage('transactions', transactions); }, [transactions]);
+  useEffect(() => { saveToStorage('role', role); }, [role]);
   useEffect(() => { saveToStorage('dealerPayments', dealerPayments); }, [dealerPayments]);
   useEffect(() => { saveToStorage('dealerPaymentAllocations', dealerPaymentAllocations); }, [dealerPaymentAllocations]);
   useEffect(() => { saveToStorage('employeeCommissions', employeeCommissions); }, [employeeCommissions]);

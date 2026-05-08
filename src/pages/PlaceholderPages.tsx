@@ -436,6 +436,11 @@ export function DealerProfilePage({
                   <Link className="text-indigoBrand" to={`/statements/${statement.id}`}>
                     View
                   </Link>
+                  {role === 'employee' && (
+                    <Link className="text-indigoBrand" to={`/statements/${statement.id}#add-transaction`}>
+                      Add Transaction
+                    </Link>
+                  )}
                   {role === 'admin' && (
                     <button
                       className="text-xs text-indigoBrand"
@@ -500,6 +505,7 @@ export function StatementDetailPage({
     type: 'bank_payout' as TransactionType,
     amount: '',
     description: '',
+    orderCode: '',
     adjustmentScope: 'shareable_net' as ManualAdjustmentScope,
     adjustmentDirection: 'increase' as ManualAdjustmentDirection,
   });
@@ -534,22 +540,23 @@ export function StatementDetailPage({
         amount,
         status,
         description: form.description,
+        orderCode: form.orderCode || undefined,
         adjustmentScope: form.type === 'manual_adjustment' ? form.adjustmentScope : undefined,
         adjustmentDirection: form.type === 'manual_adjustment' ? form.adjustmentDirection : undefined,
         createdByRole: role,
       },
     ]);
     setFlash(role === 'admin' ? 'Transaction added and confirmed.' : 'Transaction submitted for admin review.');
-    setForm((previous) => ({ ...previous, amount: '', description: '' }));
+    setForm((previous) => ({ ...previous, amount: '', description: '', orderCode: '' }));
   };
 
   return (
     <PageShell title="Statement Detail" subtitle={`${dealer.name} · ${statement.month}`}>
       <StatementBreakdown statement={statement} dealer={dealer} transactions={transactions} allocations={allocations} />
 
-      <div className="bg-white border rounded-lg p-4 space-y-3">
+      <div id="add-transaction" className="bg-white border-2 border-indigo-100 rounded-lg p-4 space-y-3">
         <div>
-          <h3 className="font-medium">Add Transaction</h3>
+          <h3 className="font-semibold text-slate-900">Add Transaction</h3>
           {role === 'employee' ? (
             <p className="text-xs text-slate-500">
               Your transaction will be submitted for admin review and will not affect totals until approved.
@@ -561,11 +568,13 @@ export function StatementDetailPage({
         <div className="grid md:grid-cols-4 gap-2 text-sm">
           <input
             type="date"
+            aria-label="Transaction date"
             value={form.date}
             onChange={(event) => setForm({ ...form, date: event.target.value })}
             className="border rounded px-2 py-1"
           />
           <select
+            aria-label="Transaction type"
             value={form.type}
             onChange={(event) => setForm({ ...form, type: event.target.value as TransactionType })}
             className="border rounded px-2 py-1"
@@ -588,9 +597,16 @@ export function StatementDetailPage({
             className="border rounded px-2 py-1"
             placeholder="Description"
           />
+          <input
+            value={form.orderCode}
+            onChange={(event) => setForm({ ...form, orderCode: event.target.value })}
+            className="border rounded px-2 py-1"
+            placeholder="Order Code optional"
+          />
           {form.type === 'manual_adjustment' && (
             <>
               <select
+                aria-label="Manual adjustment scope"
                 value={form.adjustmentScope}
                 onChange={(event) =>
                   setForm({ ...form, adjustmentScope: event.target.value as ManualAdjustmentScope })
@@ -602,6 +618,7 @@ export function StatementDetailPage({
                 ))}
               </select>
               <select
+                aria-label="Manual adjustment direction"
                 value={form.adjustmentDirection}
                 onChange={(event) =>
                   setForm({ ...form, adjustmentDirection: event.target.value as ManualAdjustmentDirection })
@@ -627,6 +644,7 @@ export function StatementDetailPage({
             <th>Type</th>
             <th>Status</th>
             <th>Amount</th>
+            <th>Order</th>
             <th>Description</th>
           </tr>
         </thead>
@@ -648,6 +666,7 @@ export function StatementDetailPage({
                 <StatusBadge status={transaction.status} />
               </td>
               <td>{formatUsd(transaction.amount)}</td>
+              <td>{transaction.orderCode || '-'}</td>
               <td>{transaction.description || '-'}</td>
             </tr>
           ))}
