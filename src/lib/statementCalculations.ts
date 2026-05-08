@@ -1,23 +1,491 @@
-import { Assignment, Dealer, DealerPayment, DealerPaymentAllocation, Employee, EmployeeCommission, EmployeePayment, EmployeePaymentAllocation, SettlementTransaction, Statement } from '../types';
-const isConfirmed = (t: SettlementTransaction) => t.status === 'confirmed';
-const sum = (list: SettlementTransaction[], type: SettlementTransaction['type']) => list.filter((t) => t.type === type && isConfirmed(t)).reduce((a, t) => a + t.amount, 0);
-const signedAdj = (tx: SettlementTransaction[], scope: 'shareable_net' | 'dealer_receivable_only') => tx.filter((t) => t.type === 'manual_adjustment' && t.adjustmentScope === scope && isConfirmed(t)).reduce((a, t) => a + (t.adjustmentDirection === 'decrease' ? -t.amount : t.amount), 0);
-export function calculateStatementTotals(statement: Statement, transactions: SettlementTransaction[], dealer: Dealer, paidAmountOverride?: number) { const scoped = transactions.filter((t) => t.statementId === statement.id); const total_bank_payouts = sum(scoped, 'bank_payout'); const total_store_expenses = sum(scoped, 'store_expense'); const total_printing_costs = sum(scoped, 'printing_cost'); const total_shipping_costs = sum(scoped, 'shipping_cost'); const adj_shareable = signedAdj(scoped, 'shareable_net'); const adj_receivable = signedAdj(scoped, 'dealer_receivable_only'); const shareable_net_amount = total_bank_payouts - total_store_expenses + adj_shareable; const company_share_amount = shareable_net_amount * dealer.companySharePercentage; const dealer_receivable_amount = company_share_amount + total_printing_costs + total_shipping_costs + adj_receivable; const paid = paidAmountOverride ?? statement.paidAmount; return { dealer_receivable_amount, remaining_amount: dealer_receivable_amount - paid, paid_amount: paid, total_bank_payouts, total_store_expenses, total_printing_costs, total_shipping_costs, shareable_net_amount, company_share_amount }; }
-export const getStatementPaidAmount = (statementId: string, allocations: DealerPaymentAllocation[]) => allocations.filter((a) => a.statementId === statementId).reduce((s, a) => s + a.allocatedAmount, 0);
-export const getStatementRemainingAmount = (statement: Statement, transactions: SettlementTransaction[], dealer: Dealer, allocations: DealerPaymentAllocation[]) => calculateStatementTotals(statement, transactions, dealer, getStatementPaidAmount(statement.id, allocations)).remaining_amount;
-export const getOpenStatementsForDealer = (dealerId: string, statements: Statement[], transactions: SettlementTransaction[], dealers: Dealer[], allocations: DealerPaymentAllocation[]) => { const d = dealers.find((x) => x.id === dealerId); if (!d) return []; return statements.filter((s) => s.dealerId === dealerId).map((s) => ({ statement: s, remaining: getStatementRemainingAmount(s, transactions, d, allocations) })).filter((x) => x.remaining > 0); };
-export const getDealerOpenBalance = (dealerId: string, statements: Statement[], transactions: SettlementTransaction[], dealers: Dealer[], allocations: DealerPaymentAllocation[]) => getOpenStatementsForDealer(dealerId, statements, transactions, dealers, allocations).reduce((a, x) => a + x.remaining, 0);
-export const getCurrentMonthReceivable = (dealerId: string, statements: Statement[], transactions: SettlementTransaction[], dealers: Dealer[], allocations: DealerPaymentAllocation[], currentMonth = '2026-04') => { const d = dealers.find((x) => x.id === dealerId); if (!d) return 0; return statements.filter((s) => s.dealerId === dealerId && s.month === currentMonth).reduce((a, s) => a + calculateStatementTotals(s, transactions, d).dealer_receivable_amount, 0); };
-export const getDashboardTotals = (statements: Statement[], transactions: SettlementTransaction[], dealers: Dealer[], allocations: DealerPaymentAllocation[]) => ({ openBalance: dealers.reduce((a, d) => a + getDealerOpenBalance(d.id, statements, transactions, dealers, allocations), 0), currentMonthReceivable: dealers.reduce((a, d) => a + getCurrentMonthReceivable(d.id, statements, transactions, dealers, allocations), 0), pendingCount: transactions.filter((t) => t.status === 'pending_review').length });
-export function allocateDealerPaymentFIFO({ amount, openStatements }: { dealerId: string; amount: number; openStatements: { statement: Statement; remaining: number }[] }) { const sorted = [...openStatements].sort((a, b) => (a.statement.month.localeCompare(b.statement.month) || (a.statement.createdAt || '').localeCompare(b.statement.createdAt || ''))); let left = amount; const allocations: { statementId: string; allocatedAmount: number }[] = []; for (const row of sorted) { if (left <= 0) break; const applied = Math.min(left, row.remaining); if (applied > 0) { allocations.push({ statementId: row.statement.id, allocatedAmount: applied }); left -= applied; } } return allocations; }
-export function getDealerLedgerRows(dealerId: string, statements: Statement[], transactions: SettlementTransaction[], dealers: Dealer[], payments: DealerPayment[]) { const d = dealers.find((x) => x.id === dealerId); if (!d) return []; const rows: { date: string; kind: string; description: string; amount: number }[] = []; statements.filter((s) => s.dealerId === dealerId).forEach((s) => { const t = calculateStatementTotals(s, transactions, d); rows.push({ date: s.month, kind: 'Statement', description: `${s.month} settlement`, amount: t.dealer_receivable_amount }); }); payments.filter((p) => p.dealerId === dealerId).forEach((p) => rows.push({ date: p.paymentDate, kind: 'Payment Received', description: p.description || 'Dealer payment', amount: -p.amount })); return rows.sort((a, b) => a.date.localeCompare(b.date)); }
+import {
+  Assignment,
+  Dealer,
+  DealerPayment,
+  DealerPaymentAllocation,
+  Employee,
+  EmployeeCommission,
+  EmployeePayment,
+  EmployeePaymentAllocation,
+  SettlementTransaction,
+  Statement,
+} from '../types';
 
-const getEmpAdj=(tx:SettlementTransaction[],statementId:string)=>tx.filter(t=>t.statementId===statementId&&t.type==='manual_adjustment'&&t.adjustmentScope==='employee_commission_base'&&t.status==='confirmed').reduce((a,t)=>a+(t.adjustmentDirection==='decrease'?-t.amount:t.amount),0);
-export function calculateEmployeeCommissionForStatement(statement: Statement, transactions: SettlementTransaction[], dealer: Dealer, assignment: Assignment, employeeId: string): EmployeeCommission { const totals=calculateStatementTotals(statement,transactions,dealer); const adj=getEmpAdj(transactions,statement.id); const raw=totals.company_share_amount-totals.total_printing_costs-totals.total_shipping_costs+adj; const commissionBase=Math.max(raw,0); const commissionRate=assignment.commissionRatePct/100; const commissionAmount=Math.max(commissionBase*commissionRate,0); const [y,m]=statement.month.split('-').map(Number); return {id:`ec-${employeeId}-${statement.id}`,employeeId,dealerId:dealer.id,statementId:statement.id,periodMonth:m,periodYear:y,companyShareAmount:totals.company_share_amount,printingCosts:totals.total_printing_costs,shippingCosts:totals.total_shipping_costs,commissionBaseAdjustments:adj,commissionBase,commissionRate,commissionAmount,paidAmount:0,remainingAmount:commissionAmount,status:commissionAmount>0?'open':'closed',createdAt:new Date().toISOString()}; }
-export function generateEmployeeCommissionsForStatement(statement: Statement, dealers: Dealer[], employees: Employee[], transactions: SettlementTransaction[], existing: EmployeeCommission[]) { const dealer=dealers.find(d=>d.id===statement.dealerId); if(!dealer) return existing; const out=[...existing]; for(const emp of employees){ const asg=emp.assignments.find(a=>a.storeId===dealer.storeId); if(!asg) continue; const calc=calculateEmployeeCommissionForStatement(statement,transactions,dealer,asg,emp.id); const i=out.findIndex(c=>c.employeeId===emp.id&&c.statementId===statement.id); if(i<0) out.push(calc); else if(!['paid','partially_paid'].includes(out[i].status)){ const paid=out[i].paidAmount; out[i]={...calc,paidAmount:paid,remainingAmount:Math.max(calc.commissionAmount-paid,0),status:paid>0?'partially_paid':calc.status}; }} return out; }
-export const getEmployeeCommissionPaidAmount=(commissionId:string,allocs:EmployeePaymentAllocation[])=>allocs.filter(a=>a.commissionId===commissionId).reduce((s,a)=>s+a.allocatedAmount,0);
-export const getEmployeeCommissionRemainingAmount=(c:EmployeeCommission,allocs:EmployeePaymentAllocation[])=>Math.max(c.commissionAmount-getEmployeeCommissionPaidAmount(c.id,allocs),0);
-export const getOpenCommissionsForEmployee=(employeeId:string,commissions:EmployeeCommission[],allocs:EmployeePaymentAllocation[])=>commissions.filter(c=>c.employeeId===employeeId).map(c=>({commission:c,remaining:getEmployeeCommissionRemainingAmount(c,allocs)})).filter(x=>x.remaining>0);
-export const getEmployeeOpenCommissionBalance=(employeeId:string,commissions:EmployeeCommission[],allocs:EmployeePaymentAllocation[])=>getOpenCommissionsForEmployee(employeeId,commissions,allocs).reduce((a,x)=>a+x.remaining,0);
-export const getCurrentMonthEmployeeCommission=(employeeId:string,commissions:EmployeeCommission[],y=2026,m=4)=>commissions.filter(c=>c.employeeId===employeeId&&c.periodYear===y&&c.periodMonth===m).reduce((a,c)=>a+c.commissionAmount,0);
-export const getEmployeeCommissionLedgerRows=(employeeId:string,commissions:EmployeeCommission[],payments:EmployeePayment[])=>{const rows:any[]=[]; commissions.filter(c=>c.employeeId===employeeId).forEach(c=>rows.push({date:`${c.periodYear}-${String(c.periodMonth).padStart(2,'0')}`,kind:'Commission',amount:c.commissionAmount,commission:c})); payments.filter(p=>p.employeeId===employeeId).forEach(p=>rows.push({date:p.paymentDate,kind:'Payment',amount:-p.amount,payment:p})); return rows.sort((a,b)=>a.date.localeCompare(b.date));};
+export interface StatementTotals {
+  dealer_receivable_amount: number;
+  remaining_amount: number;
+  paid_amount: number;
+  total_bank_payouts: number;
+  total_store_expenses: number;
+  total_printing_costs: number;
+  total_shipping_costs: number;
+  shareable_net_amount: number;
+  dealer_share_amount: number;
+  company_share_amount: number;
+}
+
+export interface CommissionPreview {
+  employee: Employee;
+  assignment: Assignment;
+  commissionBase: number;
+  commissionRate: number;
+  estimatedCommission: number;
+}
+
+const isConfirmed = (transaction: SettlementTransaction) => transaction.status === 'confirmed';
+
+const sumConfirmed = (transactions: SettlementTransaction[], type: SettlementTransaction['type']) =>
+  transactions
+    .filter((transaction) => transaction.type === type && isConfirmed(transaction))
+    .reduce((total, transaction) => total + transaction.amount, 0);
+
+const signedAdjustment = (
+  transactions: SettlementTransaction[],
+  scope: 'shareable_net' | 'dealer_receivable_only' | 'employee_commission_base',
+) =>
+  transactions
+    .filter(
+      (transaction) =>
+        transaction.type === 'manual_adjustment' &&
+        transaction.adjustmentScope === scope &&
+        isConfirmed(transaction),
+    )
+    .reduce(
+      (total, transaction) =>
+        total + (transaction.adjustmentDirection === 'decrease' ? -transaction.amount : transaction.amount),
+      0,
+    );
+
+export function calculateStatementTotals(
+  statement: Statement,
+  transactions: SettlementTransaction[],
+  dealer: Dealer,
+  paidAmountOverride?: number,
+): StatementTotals {
+  const scoped = transactions.filter((transaction) => transaction.statementId === statement.id);
+  const total_bank_payouts = sumConfirmed(scoped, 'bank_payout');
+  const total_store_expenses = sumConfirmed(scoped, 'store_expense');
+  const total_printing_costs = sumConfirmed(scoped, 'printing_cost');
+  const total_shipping_costs = sumConfirmed(scoped, 'shipping_cost');
+  const adj_shareable = signedAdjustment(scoped, 'shareable_net');
+  const adj_receivable = signedAdjustment(scoped, 'dealer_receivable_only');
+  const shareable_net_amount = total_bank_payouts - total_store_expenses + adj_shareable;
+  const dealer_share_amount = shareable_net_amount * dealer.dealerSharePercentage;
+  const company_share_amount = shareable_net_amount * dealer.companySharePercentage;
+  const dealer_receivable_amount = company_share_amount + total_printing_costs + total_shipping_costs + adj_receivable;
+  const paid = paidAmountOverride ?? statement.paidAmount;
+
+  return {
+    dealer_receivable_amount,
+    remaining_amount: dealer_receivable_amount - paid,
+    paid_amount: paid,
+    total_bank_payouts,
+    total_store_expenses,
+    total_printing_costs,
+    total_shipping_costs,
+    shareable_net_amount,
+    dealer_share_amount,
+    company_share_amount,
+  };
+}
+
+export const getStatementPaidAmount = (statementId: string, allocations: DealerPaymentAllocation[]) =>
+  allocations
+    .filter((allocation) => allocation.statementId === statementId)
+    .reduce((total, allocation) => total + allocation.allocatedAmount, 0);
+
+export function getEffectiveStatementPaidAmount(statement: Statement, allocations: DealerPaymentAllocation[]) {
+  const allocationPaid = getStatementPaidAmount(statement.id, allocations);
+  return Math.max(statement.paidAmount, allocationPaid);
+}
+
+export const getStatementRemainingAmount = (
+  statement: Statement,
+  transactions: SettlementTransaction[],
+  dealer: Dealer,
+  allocations: DealerPaymentAllocation[],
+) =>
+  calculateStatementTotals(
+    statement,
+    transactions,
+    dealer,
+    getEffectiveStatementPaidAmount(statement, allocations),
+  ).remaining_amount;
+
+export const getOpenStatementsForDealer = (
+  dealerId: string,
+  statements: Statement[],
+  transactions: SettlementTransaction[],
+  dealers: Dealer[],
+  allocations: DealerPaymentAllocation[],
+) => {
+  const dealer = dealers.find((row) => row.id === dealerId);
+  if (!dealer) return [];
+
+  return statements
+    .filter((statement) => statement.dealerId === dealerId)
+    .map((statement) => ({
+      statement,
+      remaining: getStatementRemainingAmount(statement, transactions, dealer, allocations),
+    }))
+    .filter((row) => row.remaining > 0);
+};
+
+export const getDealerOpenBalance = (
+  dealerId: string,
+  statements: Statement[],
+  transactions: SettlementTransaction[],
+  dealers: Dealer[],
+  allocations: DealerPaymentAllocation[],
+) =>
+  getOpenStatementsForDealer(dealerId, statements, transactions, dealers, allocations).reduce(
+    (total, row) => total + row.remaining,
+    0,
+  );
+
+export const getCurrentMonthReceivable = (
+  dealerId: string,
+  statements: Statement[],
+  transactions: SettlementTransaction[],
+  dealers: Dealer[],
+  allocations: DealerPaymentAllocation[],
+  currentMonth = '2026-04',
+) => {
+  const dealer = dealers.find((row) => row.id === dealerId);
+  if (!dealer) return 0;
+
+  return statements
+    .filter((statement) => statement.dealerId === dealerId && statement.month === currentMonth)
+    .reduce(
+      (total, statement) =>
+        total +
+        calculateStatementTotals(
+          statement,
+          transactions,
+          dealer,
+          getEffectiveStatementPaidAmount(statement, allocations),
+        ).dealer_receivable_amount,
+      0,
+    );
+};
+
+export const getDashboardTotals = (
+  statements: Statement[],
+  transactions: SettlementTransaction[],
+  dealers: Dealer[],
+  allocations: DealerPaymentAllocation[],
+) => ({
+  openBalance: dealers.reduce(
+    (total, dealer) => total + getDealerOpenBalance(dealer.id, statements, transactions, dealers, allocations),
+    0,
+  ),
+  currentMonthReceivable: dealers.reduce(
+    (total, dealer) =>
+      total + getCurrentMonthReceivable(dealer.id, statements, transactions, dealers, allocations),
+    0,
+  ),
+  pendingCount: transactions.filter((transaction) => transaction.status === 'pending_review').length,
+});
+
+export function allocateDealerPaymentFIFO({
+  amount,
+  openStatements,
+}: {
+  dealerId: string;
+  amount: number;
+  openStatements: { statement: Statement; remaining: number }[];
+}) {
+  const sorted = [...openStatements].sort(
+    (a, b) =>
+      a.statement.month.localeCompare(b.statement.month) ||
+      (a.statement.createdAt || '').localeCompare(b.statement.createdAt || ''),
+  );
+  let remainingPayment = amount;
+  const allocations: { statementId: string; allocatedAmount: number }[] = [];
+
+  for (const row of sorted) {
+    if (remainingPayment <= 0) break;
+    const applied = Math.min(remainingPayment, row.remaining);
+    if (applied > 0) {
+      allocations.push({ statementId: row.statement.id, allocatedAmount: applied });
+      remainingPayment -= applied;
+    }
+  }
+
+  return allocations;
+}
+
+export function getDealerLedgerRows(
+  dealerId: string,
+  statements: Statement[],
+  transactions: SettlementTransaction[],
+  dealers: Dealer[],
+  payments: DealerPayment[],
+  allocations: DealerPaymentAllocation[],
+) {
+  const dealer = dealers.find((row) => row.id === dealerId);
+  if (!dealer) return [];
+
+  const rows: { date: string; kind: string; description: string; amount: number }[] = [];
+  statements
+    .filter((statement) => statement.dealerId === dealerId)
+    .forEach((statement) => {
+      const totals = calculateStatementTotals(
+        statement,
+        transactions,
+        dealer,
+        getEffectiveStatementPaidAmount(statement, allocations),
+      );
+      rows.push({
+        date: statement.month,
+        kind: 'Statement',
+        description: `${statement.month} settlement`,
+        amount: totals.dealer_receivable_amount,
+      });
+    });
+
+  payments
+    .filter((payment) => payment.dealerId === dealerId)
+    .forEach((payment) =>
+      rows.push({
+        date: payment.paymentDate,
+        kind: 'Payment Received',
+        description: payment.description || 'Dealer payment',
+        amount: -payment.amount,
+      }),
+    );
+
+  return rows.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+const getEmployeeCommissionBaseAdjustment = (transactions: SettlementTransaction[], statementId: string) =>
+  signedAdjustment(
+    transactions.filter((transaction) => transaction.statementId === statementId),
+    'employee_commission_base',
+  );
+
+export function getCommissionPreviewForStatement(
+  statement: Statement,
+  transactions: SettlementTransaction[],
+  dealer: Dealer,
+  employee: Employee,
+  assignment: Assignment,
+) {
+  const totals = calculateStatementTotals(statement, transactions, dealer);
+  const adjustment = getEmployeeCommissionBaseAdjustment(transactions, statement.id);
+  const commissionBase = Math.max(
+    totals.company_share_amount - totals.total_printing_costs - totals.total_shipping_costs + adjustment,
+    0,
+  );
+  const commissionRate = assignment.commissionRatePct / 100;
+
+  return {
+    employee,
+    assignment,
+    commissionBase,
+    commissionRate,
+    estimatedCommission: Math.max(commissionBase * commissionRate, 0),
+  };
+}
+
+export function getCommissionPreviewsForStatement(
+  statement: Statement,
+  transactions: SettlementTransaction[],
+  dealer: Dealer,
+  employees: Employee[],
+): CommissionPreview[] {
+  return employees
+    .map((employee) => {
+      const assignment = employee.assignments.find((row) => row.storeId === dealer.storeId);
+      if (!assignment) return null;
+      return getCommissionPreviewForStatement(statement, transactions, dealer, employee, assignment);
+    })
+    .filter((preview): preview is CommissionPreview => Boolean(preview));
+}
+
+export function calculateEmployeeCommissionForStatement(
+  statement: Statement,
+  transactions: SettlementTransaction[],
+  dealer: Dealer,
+  assignment: Assignment,
+  employeeId: string,
+): EmployeeCommission {
+  const preview = getCommissionPreviewForStatement(
+    statement,
+    transactions,
+    dealer,
+    { id: employeeId, name: '', roleTitle: '', assignments: [assignment] },
+    assignment,
+  );
+  const [periodYear, periodMonth] = statement.month.split('-').map(Number);
+  const totals = calculateStatementTotals(statement, transactions, dealer);
+  const adjustment = getEmployeeCommissionBaseAdjustment(transactions, statement.id);
+
+  return {
+    id: `ec-${employeeId}-${statement.id}`,
+    employeeId,
+    dealerId: dealer.id,
+    statementId: statement.id,
+    periodMonth,
+    periodYear,
+    companyShareAmount: totals.company_share_amount,
+    printingCosts: totals.total_printing_costs,
+    shippingCosts: totals.total_shipping_costs,
+    commissionBaseAdjustments: adjustment,
+    commissionBase: preview.commissionBase,
+    commissionRate: preview.commissionRate,
+    commissionAmount: preview.estimatedCommission,
+    paidAmount: 0,
+    remainingAmount: preview.estimatedCommission,
+    status: preview.estimatedCommission > 0 ? 'open' : 'closed',
+    createdAt: new Date().toISOString(),
+  };
+}
+
+export function generateEmployeeCommissionsForStatement(
+  statement: Statement,
+  dealers: Dealer[],
+  employees: Employee[],
+  transactions: SettlementTransaction[],
+  existing: EmployeeCommission[],
+) {
+  const dealer = dealers.find((row) => row.id === statement.dealerId);
+  if (!dealer) return existing;
+
+  const output = [...existing];
+  for (const employee of employees) {
+    const assignment = employee.assignments.find((row) => row.storeId === dealer.storeId);
+    if (!assignment) continue;
+
+    const calculated = calculateEmployeeCommissionForStatement(
+      statement,
+      transactions,
+      dealer,
+      assignment,
+      employee.id,
+    );
+    const existingIndex = output.findIndex(
+      (commission) => commission.employeeId === employee.id && commission.statementId === statement.id,
+    );
+
+    if (existingIndex < 0) {
+      output.push(calculated);
+      continue;
+    }
+
+    if (!['paid', 'partially_paid'].includes(output[existingIndex].status)) {
+      const paidAmount = output[existingIndex].paidAmount;
+      output[existingIndex] = {
+        ...calculated,
+        paidAmount,
+        remainingAmount: Math.max(calculated.commissionAmount - paidAmount, 0),
+        status: paidAmount > 0 ? 'partially_paid' : calculated.status,
+      };
+    }
+  }
+
+  return output;
+}
+
+export function generateEmployeeCommissionsForStatements(
+  statements: Statement[],
+  dealers: Dealer[],
+  employees: Employee[],
+  transactions: SettlementTransaction[],
+  existing: EmployeeCommission[] = [],
+) {
+  return statements.reduce(
+    (commissions, statement) =>
+      generateEmployeeCommissionsForStatement(statement, dealers, employees, transactions, commissions),
+    existing,
+  );
+}
+
+export const getEmployeeCommissionPaidAmount = (
+  commissionId: string,
+  allocations: EmployeePaymentAllocation[],
+) =>
+  allocations
+    .filter((allocation) => allocation.commissionId === commissionId)
+    .reduce((total, allocation) => total + allocation.allocatedAmount, 0);
+
+export const getEmployeeCommissionRemainingAmount = (
+  commission: EmployeeCommission,
+  allocations: EmployeePaymentAllocation[],
+) => Math.max(commission.commissionAmount - getEmployeeCommissionPaidAmount(commission.id, allocations), 0);
+
+export const getOpenCommissionsForEmployee = (
+  employeeId: string,
+  commissions: EmployeeCommission[],
+  allocations: EmployeePaymentAllocation[],
+) =>
+  commissions
+    .filter((commission) => commission.employeeId === employeeId)
+    .map((commission) => ({
+      commission,
+      remaining: getEmployeeCommissionRemainingAmount(commission, allocations),
+    }))
+    .filter((row) => row.remaining > 0);
+
+export const getEmployeeOpenCommissionBalance = (
+  employeeId: string,
+  commissions: EmployeeCommission[],
+  allocations: EmployeePaymentAllocation[],
+) =>
+  getOpenCommissionsForEmployee(employeeId, commissions, allocations).reduce(
+    (total, row) => total + row.remaining,
+    0,
+  );
+
+export const getCurrentMonthEmployeeCommission = (
+  employeeId: string,
+  commissions: EmployeeCommission[],
+  year = 2026,
+  month = 4,
+) =>
+  commissions
+    .filter(
+      (commission) =>
+        commission.employeeId === employeeId &&
+        commission.periodYear === year &&
+        commission.periodMonth === month,
+    )
+    .reduce((total, commission) => total + commission.commissionAmount, 0);
+
+export const getEmployeeCommissionLedgerRows = (
+  employeeId: string,
+  commissions: EmployeeCommission[],
+  payments: EmployeePayment[],
+) => {
+  const rows: {
+    date: string;
+    kind: string;
+    amount: number;
+    commission?: EmployeeCommission;
+    payment?: EmployeePayment;
+  }[] = [];
+
+  commissions
+    .filter((commission) => commission.employeeId === employeeId)
+    .forEach((commission) =>
+      rows.push({
+        date: `${commission.periodYear}-${String(commission.periodMonth).padStart(2, '0')}`,
+        kind: 'Commission',
+        amount: commission.commissionAmount,
+        commission,
+      }),
+    );
+
+  payments
+    .filter((payment) => payment.employeeId === employeeId)
+    .forEach((payment) =>
+      rows.push({
+        date: payment.paymentDate,
+        kind: 'Payment',
+        amount: -payment.amount,
+        payment,
+      }),
+    );
+
+  return rows.sort((a, b) => a.date.localeCompare(b.date));
+};
