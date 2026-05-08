@@ -7,7 +7,7 @@ Baseline React + TypeScript + Vite app for the Dealer Settlement Manager product
 - TypeScript
 - Vite
 - Tailwind CSS
-- Supabase-compatible architecture (mock-only baseline)
+- Supabase Auth foundation with mock/localStorage business data
 
 ## Getting Started
 
@@ -18,18 +18,55 @@ npm run dev
 
 Then open the local Vite URL shown in terminal (typically `http://localhost:5173`).
 
+## Supabase Auth Setup
+
+Copy `.env.example` to `.env.local` and fill in the values from your Supabase project:
+
+```bash
+VITE_SUPABASE_URL=your-project-url
+VITE_SUPABASE_ANON_KEY=your-anon-key
+```
+
+Run the SQL migration in `supabase/migrations/202605090001_auth_foundation.sql` against your Supabase database. It creates:
+- `user_role` enum
+- `profiles`
+- `user_roles`
+- `has_role(user_id, role)` helper
+- auth user profile bootstrap trigger
+- RLS policies for profiles and role reads
+
+### First Admin Bootstrap
+
+The `handle_new_user` trigger inserts a profile for every new `auth.users` row. If there is no existing `admin` role, the new user is assigned `admin`. This means the first signed-up user becomes the initial admin. Later users do not automatically become admin while an admin role already exists.
+
+## Demo Mode Behavior
+
+If `VITE_SUPABASE_URL` or `VITE_SUPABASE_ANON_KEY` is missing, the app stays in demo mode:
+- No Supabase client is created.
+- `/login` and `/signup` redirect back to the app.
+- The temporary Admin / Employee role switcher remains visible.
+- Mock state continues to persist in `localStorage`.
+
+If both Supabase env vars are present:
+- `/login` and `/signup` use Supabase Auth.
+- Protected app pages redirect unauthenticated users to `/login`.
+- The temporary role switcher is hidden after login.
+- The active app role is derived from `user_roles`.
+
 ## Baseline Features
 - SaaS admin dashboard layout with sidebar and top header.
 - Light theme with white/off-white surfaces and deep indigo accent.
-- Role switcher (Admin / Employee) for temporary permission simulation.
+- Role switcher (Admin / Employee) for temporary permission simulation in demo mode.
+- Supabase Auth shell for real sign in/sign up when env vars are configured.
 - Employee role restricted to assigned stores.
 - Mock data:
   - 7 stores/dealers
   - 1 Graphic Designer employee with 3 store assignments
-- Placeholder pages for all required modules.
 
 ## Routes
 - `/` Dashboard
+- `/login`
+- `/signup`
 - `/dealers`
 - `/dealers/:dealerId`
 - `/statements/:statementId`
@@ -40,14 +77,16 @@ Then open the local Vite URL shown in terminal (typically `http://localhost:5173
 - `/settings`
 - `/my-commissions`
 
-## Mock-only Notice
-This version intentionally does not include:
-- Supabase client integration
-- Real authentication
-- Real approval workflow
-- Real financial settlement logic
+## What Remains Mock / LocalStorage
+Milestone 6A only adds the auth foundation. These areas intentionally remain mock/localStorage-backed:
+- dealers
+- statements
+- transactions
+- dealer payments and allocations
+- employee commissions, payments, and allocations
+- settlement calculations and approval workflow state
 
-See TODO comments in source for integration points.
+Do not migrate financial tables until a later Supabase milestone.
 
 ## Demo persistence
 - The mock app state is persisted to `localStorage` using a versioned key prefix: `dealer-settlement-manager:v1`.

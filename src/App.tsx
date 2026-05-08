@@ -8,6 +8,8 @@ import { DealersPage } from './pages/DealersPage';
 import { AssignmentsPage, DealerProfilePage, EmployeeProfilePage, EmployeesPage, MyCommissionsPage, SettingsPage, StatementDetailPage, TransactionsPage } from './pages/PlaceholderPages';
 import { clearAppStorage, loadFromStorage, saveToStorage } from './lib/persistence';
 import { generateEmployeeCommissionsForStatements } from './lib/statementCalculations';
+import { useAuth } from './auth/AuthContext';
+import { LoginPage, SignupPage } from './pages/AuthPages';
 
 const initialEmployeeCommissions = generateEmployeeCommissionsForStatements(
   initialStatements,
@@ -17,7 +19,8 @@ const initialEmployeeCommissions = generateEmployeeCommissionsForStatements(
 );
 
 export function App() {
-  const [role, setRole] = useState<Role>(() => loadFromStorage<Role>('role', 'admin'));
+  const auth = useAuth();
+  const [demoRole, setDemoRole] = useState<Role>(() => loadFromStorage<Role>('role', 'admin'));
   // TODO: Replace localStorage persistence with Supabase persistence in production.
   const [statements, setStatements] = useState<Statement[]>(() => loadFromStorage('statements', initialStatements));
   const [transactions, setTransactions] = useState<SettlementTransaction[]>(() => loadFromStorage('transactions', initialTransactions));
@@ -29,10 +32,16 @@ export function App() {
   const [employeePaymentAllocations, setEmployeePaymentAllocations] = useState<EmployeePaymentAllocation[]>(() => loadFromStorage('employeePaymentAllocations', []));
   const employee = employees[0];
   const assignedStoreIds = useMemo(() => employee.assignments.map((a) => a.storeId), [employee.assignments]);
+  const role: Role = auth.authEnabled ? (auth.isAdmin ? 'admin' : 'employee') : demoRole;
+  const roleLabel = auth.authEnabled
+    ? auth.roles.length > 0
+      ? auth.roles.join(', ')
+      : 'No role assigned'
+    : 'Demo role switcher';
 
   useEffect(() => { saveToStorage('statements', statements); }, [statements]);
   useEffect(() => { saveToStorage('transactions', transactions); }, [transactions]);
-  useEffect(() => { saveToStorage('role', role); }, [role]);
+  useEffect(() => { saveToStorage('role', demoRole); }, [demoRole]);
   useEffect(() => { saveToStorage('dealerPayments', dealerPayments); }, [dealerPayments]);
   useEffect(() => { saveToStorage('dealerPaymentAllocations', dealerPaymentAllocations); }, [dealerPaymentAllocations]);
   useEffect(() => { saveToStorage('employeeCommissions', employeeCommissions); }, [employeeCommissions]);
@@ -59,7 +68,33 @@ export function App() {
 
   return (
     <Routes>
-      <Route path="/" element={<AppLayout role={role} setRole={setRole} flash={flash} setFlash={setFlash} />}>
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/signup" element={<SignupPage />} />
+      <Route
+        path="/"
+        element={
+          auth.authEnabled && auth.loading ? (
+            <div className="min-h-screen bg-slate-50 flex items-center justify-center text-sm text-slate-500">
+              Loading authentication...
+            </div>
+          ) : auth.authEnabled && !auth.user ? (
+            <Navigate to="/login" replace />
+          ) : (
+            <AppLayout
+              role={role}
+              setRole={setDemoRole}
+              flash={flash}
+              setFlash={setFlash}
+              authEnabled={auth.authEnabled}
+              userEmail={auth.user?.email}
+              roleLabel={roleLabel}
+              onSignOut={() => {
+                void auth.signOut();
+              }}
+            />
+          )
+        }
+      >
         <Route index element={<DashboardPage dealers={dealers} statements={statements} transactions={transactions} allocations={dealerPaymentAllocations} role={role} employee={employee} employeeCommissions={employeeCommissions} employeePaymentAllocations={employeePaymentAllocations} />} />
         <Route path="dealers" element={<DealersPage dealers={dealers} statements={statements} transactions={transactions} allocations={dealerPaymentAllocations} storeIds={role === 'employee' ? assignedStoreIds : undefined} />} />
         <Route path="dealers/:dealerId" element={<DealerProfilePage role={role} assignedStoreIds={assignedStoreIds} dealers={dealers} statements={statements} transactions={transactions} setStatements={setStatements} setFlash={setFlash} payments={dealerPayments} allocations={dealerPaymentAllocations} setPayments={setDealerPayments} setAllocations={setDealerPaymentAllocations} employees={employees} employeeCommissions={employeeCommissions} setEmployeeCommissions={setEmployeeCommissions} />} />
