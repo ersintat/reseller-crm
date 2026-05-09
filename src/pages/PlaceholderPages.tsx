@@ -37,6 +37,7 @@ import {
 } from '../lib/statementCalculations';
 import { PageShell } from './Shared';
 import { StatusBadge } from '../components/ui/StatusBadge';
+import { Button, DataTable, EmptyState, SectionCard } from '../components/ui/Primitives';
 
 const transactionTypes: TransactionType[] = [
   'bank_payout',
@@ -56,11 +57,43 @@ const bankPayoutHelper =
 
 function SummaryCard({ label, value, helper }: { label: string; value: string; helper?: string }) {
   return (
-    <div className="bg-white border rounded-lg p-4">
-      <p className="text-xs text-slate-500">{label}</p>
-      <p className="text-xl font-semibold text-slate-900">{value}</p>
-      {helper && <p className="text-[11px] text-slate-500 mt-1">{helper}</p>}
+    <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-indigoBrand to-indigo-400" />
+      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</p>
+      <p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{value}</p>
+      {helper && <p className="mt-2 text-xs leading-5 text-slate-500">{helper}</p>}
     </div>
+  );
+}
+
+function InfoCallout({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 px-4 py-3 text-sm text-indigo-900">
+      {children}
+    </div>
+  );
+}
+
+function FormLabel({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="space-y-1.5 text-sm">
+      <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function PermissionBadge({ enabled }: { enabled: boolean }) {
+  return (
+    <span
+      className={
+        enabled
+          ? 'inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200'
+          : 'inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200'
+      }
+    >
+      {enabled ? 'Enabled' : 'Restricted'}
+    </span>
   );
 }
 
@@ -84,23 +117,23 @@ function StatementBreakdown({ statement, dealer, transactions, allocations }: {
   ];
 
   return (
-    <div className="bg-white border rounded-lg p-4">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h3 className="font-medium text-slate-900">Statement Breakdown</h3>
-          <p className="text-xs text-slate-500 mt-1">{bankPayoutHelper}</p>
-        </div>
-        <StatusBadge status={statement.status} />
-      </div>
-      <div className="grid md:grid-cols-4 gap-3 mt-4">
+    <SectionCard
+      title="Calculation Breakdown"
+      subtitle="Confirmed transactions only are included in statement totals."
+      action={<StatusBadge status={statement.status} />}
+    >
+      <div className="space-y-4 p-5">
+        <InfoCallout>{bankPayoutHelper}</InfoCallout>
+        <div className="grid gap-3 md:grid-cols-4">
         {rows.map(([label, value]) => (
-          <div key={String(label)} className="border rounded-md px-3 py-2 bg-slate-50">
-            <p className="text-xs text-slate-500">{label}</p>
-            <p className="font-semibold">{formatUsd(Number(value))}</p>
+          <div key={String(label)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+            <p className="mt-1 text-base font-semibold text-slate-950">{formatUsd(Number(value))}</p>
           </div>
         ))}
+        </div>
       </div>
-    </div>
+    </SectionCard>
   );
 }
 
@@ -266,8 +299,8 @@ export function DealerProfilePage({
   };
 
   return (
-    <PageShell title="Dealer Profile" subtitle={dealer.name}>
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+    <PageShell title="Dealer Profile" subtitle={`${dealer.name} account overview and settlement ledger`}>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <SummaryCard label="Open Balance" value={formatUsd(openBalance)} helper="Sum of statement remaining amounts." />
         <SummaryCard
           label="Current Month Receivable"
@@ -282,195 +315,227 @@ export function DealerProfilePage({
         />
       </div>
 
-      <p className="text-xs text-slate-500">{bankPayoutHelper}</p>
+      <InfoCallout>{bankPayoutHelper}</InfoCallout>
 
       {role === 'admin' && (
-        <div className="flex gap-2">
-          <input
-            type="month"
-            className="border rounded px-2 py-1"
-            value={month}
-            onChange={(event) => setMonth(event.target.value)}
-          />
-          <button className="bg-indigoBrand text-white px-3 py-1 rounded" onClick={createStatement}>
-            New Statement
-          </button>
-        </div>
-      )}
-
-      {role === 'admin' && (
-        <div className="bg-white border rounded-lg p-4 space-y-3">
-          <h3 className="font-medium">Record Dealer Payment</h3>
-          <div className="grid md:grid-cols-4 gap-2">
-            <input
-              type="date"
-              className="border rounded px-2 py-1"
-              value={payForm.paymentDate}
-              onChange={(event) => setPayForm({ ...payForm, paymentDate: event.target.value })}
-            />
-            <input
-              placeholder="Amount"
-              type="number"
-              min="0.01"
-              className="border rounded px-2 py-1"
-              value={payForm.amount}
-              onChange={(event) => setPayForm({ ...payForm, amount: event.target.value })}
-            />
-            <input
-              placeholder="Description"
-              className="border rounded px-2 py-1"
-              value={payForm.description}
-              onChange={(event) => setPayForm({ ...payForm, description: event.target.value })}
-            />
-            <select
-              className="border rounded px-2 py-1"
-              value={payForm.mode}
-              onChange={(event) => setPayForm({ ...payForm, mode: event.target.value as 'fifo' | 'manual' })}
-            >
-              <option value="fifo">FIFO</option>
-              <option value="manual">Manual</option>
-            </select>
-          </div>
-
-          {payForm.mode === 'fifo' && (
-            <div className="text-xs text-slate-600">
-              Preview:{' '}
-              {allocateDealerPaymentFIFO({
-                dealerId: dealer.id,
-                amount: Number(payForm.amount) || 0,
-                openStatements,
-              })
-                .map((row) => `${row.statementId}: ${formatUsd(row.allocatedAmount)}`)
-                .join(' | ') || 'No allocation preview'}
+        <div className="grid gap-5 xl:grid-cols-3">
+          <SectionCard title="New Statement" subtitle="Create a mock monthly statement for this dealer.">
+            <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-end">
+              <FormLabel label="Statement month">
+                <input
+                  type="month"
+                  className="h-10 w-full px-3"
+                  value={month}
+                  onChange={(event) => setMonth(event.target.value)}
+                />
+              </FormLabel>
+              <Button variant="primary" onClick={createStatement}>
+                New Statement
+              </Button>
             </div>
-          )}
+          </SectionCard>
 
-          {payForm.mode === 'manual' && (
-            <div className="space-y-1">
-              {openStatements.map((open) => (
-                <div key={open.statement.id} className="flex items-center gap-2 text-sm">
-                  <span className="w-36">{open.statement.month}</span>
-                  <span className="w-28">{formatUsd(open.remaining)}</span>
+          <SectionCard
+            className="xl:col-span-2"
+            title="Record Payment"
+            subtitle="Allocate dealer payments with FIFO or manual statement allocation."
+          >
+            <div className="space-y-4 p-5">
+              <div className="grid gap-3 md:grid-cols-4">
+                <FormLabel label="Payment date">
                   <input
-                    type="number"
-                    min="0"
-                    placeholder="Allocate"
-                    className="border rounded px-2 py-1"
-                    value={manual[open.statement.id] || ''}
-                    onChange={(event) => setManual({ ...manual, [open.statement.id]: event.target.value })}
+                    type="date"
+                    className="h-10 w-full px-3"
+                    value={payForm.paymentDate}
+                    onChange={(event) => setPayForm({ ...payForm, paymentDate: event.target.value })}
                   />
-                </div>
-              ))}
-            </div>
-          )}
+                </FormLabel>
+                <FormLabel label="Amount">
+                  <input
+                    placeholder="0.00"
+                    type="number"
+                    min="0.01"
+                    className="h-10 w-full px-3"
+                    value={payForm.amount}
+                    onChange={(event) => setPayForm({ ...payForm, amount: event.target.value })}
+                  />
+                </FormLabel>
+                <FormLabel label="Description">
+                  <input
+                    placeholder="Dealer payment"
+                    className="h-10 w-full px-3"
+                    value={payForm.description}
+                    onChange={(event) => setPayForm({ ...payForm, description: event.target.value })}
+                  />
+                </FormLabel>
+                <FormLabel label="Allocation mode">
+                  <select
+                    className="h-10 w-full px-3"
+                    value={payForm.mode}
+                    onChange={(event) => setPayForm({ ...payForm, mode: event.target.value as 'fifo' | 'manual' })}
+                  >
+                    <option value="fifo">FIFO</option>
+                    <option value="manual">Manual</option>
+                  </select>
+                </FormLabel>
+              </div>
 
-          <button className="bg-indigoBrand text-white px-3 py-1 rounded" onClick={submitPayment}>
-            Submit Payment
-          </button>
+              {payForm.mode === 'fifo' && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+                  <span className="font-semibold text-slate-700">FIFO preview: </span>
+                  {allocateDealerPaymentFIFO({
+                    dealerId: dealer.id,
+                    amount: Number(payForm.amount) || 0,
+                    openStatements,
+                  })
+                    .map((row) => `${row.statementId}: ${formatUsd(row.allocatedAmount)}`)
+                    .join(' | ') || 'No allocation preview'}
+                </div>
+              )}
+
+              {payForm.mode === 'manual' && (
+                <div className="rounded-xl border border-slate-200">
+                  {openStatements.map((open) => (
+                    <div
+                      key={open.statement.id}
+                      className="grid items-center gap-3 border-t border-slate-100 px-4 py-3 text-sm first:border-t-0 md:grid-cols-3"
+                    >
+                      <span className="font-medium text-slate-900">{open.statement.month}</span>
+                      <span className="text-slate-500">Remaining {formatUsd(open.remaining)}</span>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="Allocate"
+                        className="h-9 px-3"
+                        value={manual[open.statement.id] || ''}
+                        onChange={(event) => setManual({ ...manual, [open.statement.id]: event.target.value })}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <Button variant="primary" onClick={submitPayment}>
+                Submit Payment
+              </Button>
+            </div>
+          </SectionCard>
         </div>
       )}
 
-      {ledger.length === 0 && (
-        <div className="bg-white border rounded-lg p-4 text-slate-500">No ledger activity yet.</div>
-      )}
-
-      <table className="w-full bg-white border rounded-lg overflow-hidden text-sm">
-        <thead className="bg-slate-100">
-          <tr>
-            <th className="p-2 text-left">Date</th>
-            <th>Type</th>
-            <th>Description</th>
-            <th>Amount</th>
-            <th>Running</th>
-          </tr>
-        </thead>
-        <tbody>
-          {ledger.map((row, index) => {
-            running += row.amount;
-            return (
-              <tr key={`${row.date}-${index}`} className="border-t">
-                <td className="p-2">{row.date}</td>
-                <td>{row.kind}</td>
-                <td>{row.description}</td>
-                <td>{formatUsd(row.amount)}</td>
-                <td>{formatUsd(running)}</td>
+      <SectionCard title="Statement Ledger" subtitle="Chronological receivable and payment activity for this dealer.">
+        {ledger.length === 0 ? (
+          <EmptyState title="No ledger activity yet." />
+        ) : (
+          <DataTable>
+            <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Date</th>
+                <th className="px-4 py-3">Type</th>
+                <th className="px-4 py-3">Description</th>
+                <th className="px-4 py-3 text-right">Amount</th>
+                <th className="px-4 py-3 text-right">Running</th>
               </tr>
-            );
-          })}
-        </tbody>
-      </table>
+            </thead>
+            <tbody>
+              {ledger.map((row, index) => {
+                running += row.amount;
+                const isPayment = row.amount < 0;
+                return (
+                  <tr
+                    key={`${row.date}-${index}`}
+                    className={isPayment ? 'border-t border-slate-100 bg-emerald-50/40' : 'border-t border-slate-100 hover:bg-slate-50'}
+                  >
+                    <td className="px-4 py-3 text-slate-600">{row.date}</td>
+                    <td className="px-4 py-3 font-medium text-slate-900">{row.kind}</td>
+                    <td className="px-4 py-3 text-slate-600">{row.description}</td>
+                    <td className={isPayment ? 'px-4 py-3 text-right font-semibold text-emerald-700' : 'px-4 py-3 text-right font-semibold text-slate-950'}>
+                      {formatUsd(row.amount)}
+                    </td>
+                    <td className="px-4 py-3 text-right font-semibold text-slate-950">{formatUsd(running)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </DataTable>
+        )}
+      </SectionCard>
 
-      <table className="w-full bg-white border rounded-lg overflow-hidden text-sm">
-        <thead className="bg-slate-100">
-          <tr>
-            <th className="p-3 text-left">Month</th>
-            <th>Status</th>
-            <th>Platform Payout</th>
-            <th>Company Share</th>
-            <th>Dealer Receivable</th>
-            <th>Paid</th>
-            <th>Remaining</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {dealerStatements.map((statement) => {
-            const totals = calculateStatementTotals(
-              statement,
-              transactions,
-              dealer,
-              getEffectiveStatementPaidAmount(statement, allocations),
-            );
-            return (
-              <tr key={statement.id} className="border-t">
-                <td className="p-3">{statement.month}</td>
-                <td>
-                  <StatusBadge status={statement.status} />
-                </td>
-                <td>{formatUsd(totals.total_bank_payouts)}</td>
-                <td>{formatUsd(totals.company_share_amount)}</td>
-                <td>{formatUsd(totals.dealer_receivable_amount)}</td>
-                <td>{formatUsd(totals.paid_amount)}</td>
-                <td>{formatUsd(totals.remaining_amount)}</td>
-                <td className="space-x-2">
-                  <Link className="text-indigoBrand" to={`/statements/${statement.id}`}>
-                    View
-                  </Link>
-                  {role === 'employee' && (
-                    <Link className="text-indigoBrand" to={`/statements/${statement.id}#add-transaction`}>
-                      Add Transaction
-                    </Link>
-                  )}
-                  {role === 'admin' && (
-                    <button
-                      className="text-xs text-indigoBrand"
-                      onClick={() => {
-                        setStatements((previous) =>
-                          previous.map((row) =>
-                            row.id === statement.id ? { ...row, status: 'closed' } : row,
-                          ),
-                        );
-                        setEmployeeCommissions((previous) =>
-                          generateEmployeeCommissionsForStatement(
-                            statement,
-                            dealers,
-                            employees,
-                            transactions,
-                            previous,
-                          ),
-                        );
-                        setFlash('Statement closed and commissions generated.');
-                      }}
-                    >
-                      Close Statement
-                    </button>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      <SectionCard title="Statements" subtitle="Statement-level payout, receivable, payment, and remaining balance review.">
+        <DataTable>
+          <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="px-4 py-3">Month</th>
+              <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3 text-right">Platform Payout</th>
+              <th className="px-4 py-3 text-right">Company Share</th>
+              <th className="px-4 py-3 text-right">Dealer Receivable</th>
+              <th className="px-4 py-3 text-right">Paid</th>
+              <th className="px-4 py-3 text-right">Remaining</th>
+              <th className="px-4 py-3 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {dealerStatements.map((statement) => {
+              const totals = calculateStatementTotals(
+                statement,
+                transactions,
+                dealer,
+                getEffectiveStatementPaidAmount(statement, allocations),
+              );
+              return (
+                <tr key={statement.id} className="border-t border-slate-100 transition hover:bg-slate-50">
+                  <td className="px-4 py-3 font-medium text-slate-950">{statement.month}</td>
+                  <td className="px-4 py-3">
+                    <StatusBadge status={statement.status} />
+                  </td>
+                  <td className="px-4 py-3 text-right">{formatUsd(totals.total_bank_payouts)}</td>
+                  <td className="px-4 py-3 text-right">{formatUsd(totals.company_share_amount)}</td>
+                  <td className="px-4 py-3 text-right font-semibold text-slate-950">{formatUsd(totals.dealer_receivable_amount)}</td>
+                  <td className="px-4 py-3 text-right text-emerald-700">{formatUsd(totals.paid_amount)}</td>
+                  <td className="px-4 py-3 text-right font-semibold text-slate-950">{formatUsd(totals.remaining_amount)}</td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex justify-end gap-2">
+                      <Link className="rounded-lg px-2.5 py-1.5 font-medium text-indigoBrand hover:bg-indigo-50" to={`/statements/${statement.id}`}>
+                        View
+                      </Link>
+                      {role === 'employee' && (
+                        <Link className="rounded-lg px-2.5 py-1.5 font-medium text-indigoBrand hover:bg-indigo-50" to={`/statements/${statement.id}#add-transaction`}>
+                          Add Transaction
+                        </Link>
+                      )}
+                      {role === 'admin' && (
+                        <button
+                          className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-indigoBrand hover:bg-indigo-50"
+                          onClick={() => {
+                            setStatements((previous) =>
+                              previous.map((row) =>
+                                row.id === statement.id ? { ...row, status: 'closed' } : row,
+                              ),
+                            );
+                            setEmployeeCommissions((previous) =>
+                              generateEmployeeCommissionsForStatement(
+                                statement,
+                                dealers,
+                                employees,
+                                transactions,
+                                previous,
+                              ),
+                            );
+                            setFlash('Statement closed and commissions generated.');
+                          }}
+                        >
+                          Close
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </DataTable>
+      </SectionCard>
     </PageShell>
   );
 }
@@ -551,172 +616,201 @@ export function StatementDetailPage({
   };
 
   return (
-    <PageShell title="Statement Detail" subtitle={`${dealer.name} · ${statement.month}`}>
+    <PageShell title="Statement Detail" subtitle={`${dealer.name} · ${statement.month} financial review`}>
       <StatementBreakdown statement={statement} dealer={dealer} transactions={transactions} allocations={allocations} />
 
-      <div id="add-transaction" className="bg-white border-2 border-indigo-100 rounded-lg p-4 space-y-3">
-        <div>
-          <h3 className="font-semibold text-slate-900">Add Transaction</h3>
+      <SectionCard
+        title="Add Transaction"
+        subtitle={role === 'employee' ? 'Employee submissions enter the review queue.' : 'Admin-created transactions are confirmed immediately.'}
+      >
+        <div id="add-transaction" className="space-y-4 p-5">
           {role === 'employee' ? (
-            <p className="text-xs text-slate-500">
-              Your transaction will be submitted for admin review and will not affect totals until approved.
-            </p>
+            <InfoCallout>Your transaction will be submitted for admin review and will not affect totals until approved.</InfoCallout>
           ) : (
-            <p className="text-xs text-slate-500">Admin-created transactions are confirmed immediately.</p>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              Admin-created transactions are confirmed immediately.
+            </div>
           )}
-        </div>
-        <div className="grid md:grid-cols-4 gap-2 text-sm">
-          <input
-            type="date"
-            aria-label="Transaction date"
-            value={form.date}
-            onChange={(event) => setForm({ ...form, date: event.target.value })}
-            className="border rounded px-2 py-1"
-          />
-          <select
-            aria-label="Transaction type"
-            value={form.type}
-            onChange={(event) => setForm({ ...form, type: event.target.value as TransactionType })}
-            className="border rounded px-2 py-1"
-          >
-            {transactionTypes.map((type) => (
-              <option key={type}>{type}</option>
-            ))}
-          </select>
-          <input
-            type="number"
-            min="0.01"
-            value={form.amount}
-            onChange={(event) => setForm({ ...form, amount: event.target.value })}
-            className="border rounded px-2 py-1"
-            placeholder="Amount"
-          />
-          <input
-            value={form.description}
-            onChange={(event) => setForm({ ...form, description: event.target.value })}
-            className="border rounded px-2 py-1"
-            placeholder="Description"
-          />
-          <input
-            value={form.orderCode}
-            onChange={(event) => setForm({ ...form, orderCode: event.target.value })}
-            className="border rounded px-2 py-1"
-            placeholder="Order Code optional"
-          />
-          {form.type === 'manual_adjustment' && (
-            <>
+          <div className="grid gap-3 md:grid-cols-4">
+            <FormLabel label="Date">
+              <input
+                type="date"
+                aria-label="Transaction date"
+                value={form.date}
+                onChange={(event) => setForm({ ...form, date: event.target.value })}
+                className="h-10 w-full px-3"
+              />
+            </FormLabel>
+            <FormLabel label="Type">
               <select
-                aria-label="Manual adjustment scope"
-                value={form.adjustmentScope}
-                onChange={(event) =>
-                  setForm({ ...form, adjustmentScope: event.target.value as ManualAdjustmentScope })
-                }
-                className="border rounded px-2 py-1"
+                aria-label="Transaction type"
+                value={form.type}
+                onChange={(event) => setForm({ ...form, type: event.target.value as TransactionType })}
+                className="h-10 w-full px-3"
               >
-                {adjustmentScopes.map((scope) => (
-                  <option key={scope}>{scope}</option>
+                {transactionTypes.map((type) => (
+                  <option key={type}>{type}</option>
                 ))}
               </select>
-              <select
-                aria-label="Manual adjustment direction"
-                value={form.adjustmentDirection}
-                onChange={(event) =>
-                  setForm({ ...form, adjustmentDirection: event.target.value as ManualAdjustmentDirection })
-                }
-                className="border rounded px-2 py-1"
-              >
-                {adjustmentDirections.map((direction) => (
-                  <option key={direction}>{direction}</option>
-                ))}
-              </select>
-            </>
-          )}
+            </FormLabel>
+            <FormLabel label="Amount">
+              <input
+                type="text"
+                inputMode="decimal"
+                value={form.amount}
+                onChange={(event) => setForm({ ...form, amount: event.target.value })}
+                className="h-10 w-full px-3"
+                placeholder="0.00"
+              />
+            </FormLabel>
+            <FormLabel label="Description">
+              <input
+                value={form.description}
+                onChange={(event) => setForm({ ...form, description: event.target.value })}
+                className="h-10 w-full px-3"
+                placeholder="Description"
+              />
+            </FormLabel>
+            <FormLabel label="Order code">
+              <input
+                value={form.orderCode}
+                onChange={(event) => setForm({ ...form, orderCode: event.target.value })}
+                className="h-10 w-full px-3"
+                placeholder="Optional"
+              />
+            </FormLabel>
+            {form.type === 'manual_adjustment' && (
+              <>
+                <FormLabel label="Adjustment scope">
+                  <select
+                    aria-label="Manual adjustment scope"
+                    value={form.adjustmentScope}
+                    onChange={(event) =>
+                      setForm({ ...form, adjustmentScope: event.target.value as ManualAdjustmentScope })
+                    }
+                    className="h-10 w-full px-3"
+                  >
+                    {adjustmentScopes.map((scope) => (
+                      <option key={scope}>{scope}</option>
+                    ))}
+                  </select>
+                </FormLabel>
+                <FormLabel label="Direction">
+                  <select
+                    aria-label="Manual adjustment direction"
+                    value={form.adjustmentDirection}
+                    onChange={(event) =>
+                      setForm({ ...form, adjustmentDirection: event.target.value as ManualAdjustmentDirection })
+                    }
+                    className="h-10 w-full px-3"
+                  >
+                    {adjustmentDirections.map((direction) => (
+                      <option key={direction}>{direction}</option>
+                    ))}
+                  </select>
+                </FormLabel>
+              </>
+            )}
+          </div>
+          <Button variant="primary" onClick={addTransaction}>
+            Add Transaction
+          </Button>
         </div>
-        <button className="bg-indigoBrand text-white px-3 py-1 rounded" onClick={addTransaction}>
-          Add Transaction
-        </button>
-      </div>
+      </SectionCard>
 
-      <table className="w-full bg-white border rounded-lg overflow-hidden text-sm">
-        <thead className="bg-slate-100">
-          <tr>
-            <th className="p-2 text-left">Date</th>
-            <th>Type</th>
-            <th>Status</th>
-            <th>Amount</th>
-            <th>Order</th>
-            <th>Description</th>
-          </tr>
-        </thead>
-        <tbody>
-          {txns.map((transaction) => (
-            <tr
-              key={transaction.id}
-              className={`border-t ${
-                transaction.status === 'confirmed'
-                  ? ''
-                  : transaction.status === 'rejected'
-                    ? 'text-red-500 bg-red-50'
-                    : 'text-slate-500 bg-slate-50'
-              }`}
-            >
-              <td className="p-2">{transaction.date}</td>
-              <td>{transaction.type}</td>
-              <td>
-                <StatusBadge status={transaction.status} />
-              </td>
-              <td>{formatUsd(transaction.amount)}</td>
-              <td>{transaction.orderCode || '-'}</td>
-              <td>{transaction.description || '-'}</td>
+      <SectionCard title="Transaction Ledger" subtitle="Pending and rejected rows are separated visually from confirmed activity.">
+        <DataTable>
+          <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="px-4 py-3">Date</th>
+              <th className="px-4 py-3">Type</th>
+              <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3 text-right">Amount</th>
+              <th className="px-4 py-3">Order</th>
+              <th className="px-4 py-3">Description</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {txns.map((transaction) => (
+              <tr
+                key={transaction.id}
+                className={`border-t border-slate-100 ${
+                  transaction.status === 'confirmed'
+                    ? 'transition hover:bg-slate-50'
+                    : transaction.status === 'rejected'
+                      ? 'bg-red-50/70 text-red-900'
+                      : 'bg-amber-50/70 text-amber-900'
+                }`}
+              >
+                <td className="px-4 py-3">{transaction.date}</td>
+                <td className="px-4 py-3 font-medium">{transaction.type}</td>
+                <td className="px-4 py-3">
+                  <StatusBadge status={transaction.status} />
+                </td>
+                <td className="px-4 py-3 text-right font-semibold">{formatUsd(transaction.amount)}</td>
+                <td className="px-4 py-3">{transaction.orderCode || '-'}</td>
+                <td className="px-4 py-3">{transaction.description || '-'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </DataTable>
+      </SectionCard>
 
-      <div className="bg-white border rounded-lg p-4 text-sm">
-        <h3 className="font-medium mb-2">Payment Allocations</h3>
-        <p>Paid amount: {formatUsd(totals.paid_amount)}</p>
-        <p>Remaining amount: {formatUsd(totals.remaining_amount)}</p>
-        {statementAllocations.length === 0 ? (
-          <p className="text-xs text-slate-500 mt-1">No payment allocation rows yet.</p>
-        ) : (
-          statementAllocations.map((allocation) => (
-            <p key={allocation.id} className="text-xs">
-              {allocation.paymentId}: {formatUsd(allocation.allocatedAmount)}
-            </p>
-          ))
+      <div className="grid gap-5 xl:grid-cols-2">
+        <SectionCard title="Payment Allocations" subtitle="Dealer payments allocated to this statement.">
+          <div className="grid gap-3 p-5 sm:grid-cols-2">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Paid amount</p>
+              <p className="mt-1 text-xl font-semibold text-emerald-700">{formatUsd(totals.paid_amount)}</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Remaining amount</p>
+              <p className="mt-1 text-xl font-semibold text-slate-950">{formatUsd(totals.remaining_amount)}</p>
+            </div>
+          </div>
+          {statementAllocations.length === 0 ? (
+            <EmptyState title="No payment allocation rows yet." />
+          ) : (
+            <div className="divide-y divide-slate-100 px-5 pb-5 text-sm">
+              {statementAllocations.map((allocation) => (
+                <div key={allocation.id} className="flex items-center justify-between py-3">
+                  <span className="font-medium text-slate-900">{allocation.paymentId}</span>
+                  <span className="font-semibold text-emerald-700">{formatUsd(allocation.allocatedAmount)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </SectionCard>
+
+        {role === 'admin' && (
+          <SectionCard title="Employee Commission Preview" subtitle="Estimated commission from current statement totals.">
+            {commissionPreviews.length === 0 ? (
+              <EmptyState title="No employee commission assignment for this dealer." />
+            ) : (
+              <DataTable>
+                <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Assigned Employee</th>
+                    <th className="px-4 py-3 text-right">Rate</th>
+                    <th className="px-4 py-3 text-right">Commission Base</th>
+                    <th className="px-4 py-3 text-right">Estimated Commission</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {commissionPreviews.map((preview) => (
+                    <tr key={preview.employee.id} className="border-t border-slate-100 transition hover:bg-slate-50">
+                      <td className="px-4 py-3 font-medium text-slate-950">{preview.employee.name}</td>
+                      <td className="px-4 py-3 text-right">{preview.assignment.commissionRatePct}%</td>
+                      <td className="px-4 py-3 text-right">{formatUsd(preview.commissionBase)}</td>
+                      <td className="px-4 py-3 text-right font-semibold text-slate-950">{formatUsd(preview.estimatedCommission)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </DataTable>
+            )}
+          </SectionCard>
         )}
       </div>
-
-      {role === 'admin' && (
-        <div className="bg-white border rounded-lg p-4">
-          <h3 className="font-medium">Employee Commission Preview</h3>
-          {commissionPreviews.length === 0 ? (
-            <p className="text-sm text-slate-500 mt-2">No employee commission assignment for this dealer.</p>
-          ) : (
-            <table className="w-full text-sm mt-3">
-              <thead className="text-left text-slate-500">
-                <tr>
-                  <th className="py-2">Assigned Employee</th>
-                  <th>Commission Rate</th>
-                  <th>Commission Base</th>
-                  <th>Estimated Commission</th>
-                </tr>
-              </thead>
-              <tbody>
-                {commissionPreviews.map((preview) => (
-                  <tr key={preview.employee.id} className="border-t">
-                    <td className="py-2">{preview.employee.name}</td>
-                    <td>{preview.assignment.commissionRatePct}%</td>
-                    <td>{formatUsd(preview.commissionBase)}</td>
-                    <td>{formatUsd(preview.estimatedCommission)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
     </PageShell>
   );
 }
@@ -763,93 +857,153 @@ export function TransactionsPage({
     );
     setFlash(status === 'confirmed' ? 'Transaction approved.' : 'Transaction rejected.');
   };
+  const pendingRows = rows.filter((transaction) => transaction.status === 'pending_review');
 
   return (
     <PageShell title="Transactions" subtitle="Global transaction management and approval queue">
-      <div className="grid md:grid-cols-4 gap-2">
-        <select
-          className="border rounded px-2 py-1"
-          value={filters.dealerId}
-          onChange={(event) => setFilters({ ...filters, dealerId: event.target.value })}
-        >
-          <option value="">All dealers</option>
-          {visibleDealers.map((dealer) => (
-            <option key={dealer.id} value={dealer.id}>
-              {dealer.name}
-            </option>
-          ))}
-        </select>
-        <select
-          className="border rounded px-2 py-1"
-          value={filters.type}
-          onChange={(event) => setFilters({ ...filters, type: event.target.value })}
-        >
-          <option value="">All types</option>
-          {transactionTypes.map((type) => (
-            <option key={type}>{type}</option>
-          ))}
-        </select>
-        <select
-          className="border rounded px-2 py-1"
-          value={filters.status}
-          onChange={(event) => setFilters({ ...filters, status: event.target.value })}
-        >
-          <option value="">All status</option>
-          <option>confirmed</option>
-          <option>pending_review</option>
-          <option>rejected</option>
-        </select>
-        <input
-          className="border rounded px-2 py-1"
-          placeholder="Search order/description"
-          value={filters.q}
-          onChange={(event) => setFilters({ ...filters, q: event.target.value })}
-        />
-      </div>
-      <table className="w-full bg-white border rounded-lg overflow-hidden text-sm mt-3">
-        <thead className="bg-slate-100">
-          <tr>
-            <th className="p-3 text-left">Dealer</th>
-            <th>Type</th>
-            <th>Status</th>
-            <th>Amount</th>
-            <th>Order</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length === 0 && (
-            <tr>
-              <td className="p-4 text-slate-500" colSpan={6}>
-                No transactions match the current filters.
-              </td>
-            </tr>
-          )}
-          {rows.map((transaction) => (
-            <tr key={transaction.id} className="border-t">
-              <td className="p-3">{dealers.find((dealer) => dealer.id === transaction.dealerId)?.name}</td>
-              <td>{transaction.type}</td>
-              <td>
-                <StatusBadge status={transaction.status} />
-              </td>
-              <td>{formatUsd(transaction.amount)}</td>
-              <td>{transaction.orderCode || '-'}</td>
-              <td>
-                {role === 'admin' && transaction.status === 'pending_review' && (
-                  <>
-                    <button className="text-indigoBrand mr-2" onClick={() => updateStatus(transaction.id, 'confirmed')}>
-                      Approve
-                    </button>
-                    <button className="text-red-600" onClick={() => updateStatus(transaction.id, 'rejected')}>
-                      Reject
-                    </button>
-                  </>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <SectionCard title="Transaction Filters" subtitle="Narrow the approval and ledger views without changing mock data.">
+        <div className="grid gap-3 p-5 md:grid-cols-4">
+          <FormLabel label="Dealer">
+            <select
+              className="h-10 w-full px-3"
+              value={filters.dealerId}
+              onChange={(event) => setFilters({ ...filters, dealerId: event.target.value })}
+            >
+              <option value="">All dealers</option>
+              {visibleDealers.map((dealer) => (
+                <option key={dealer.id} value={dealer.id}>
+                  {dealer.name}
+                </option>
+              ))}
+            </select>
+          </FormLabel>
+          <FormLabel label="Type">
+            <select
+              className="h-10 w-full px-3"
+              value={filters.type}
+              onChange={(event) => setFilters({ ...filters, type: event.target.value })}
+            >
+              <option value="">All types</option>
+              {transactionTypes.map((type) => (
+                <option key={type}>{type}</option>
+              ))}
+            </select>
+          </FormLabel>
+          <FormLabel label="Status">
+            <select
+              className="h-10 w-full px-3"
+              value={filters.status}
+              onChange={(event) => setFilters({ ...filters, status: event.target.value })}
+            >
+              <option value="">All status</option>
+              <option>confirmed</option>
+              <option>pending_review</option>
+              <option>rejected</option>
+            </select>
+          </FormLabel>
+          <FormLabel label="Search">
+            <input
+              className="h-10 w-full px-3"
+              placeholder="Order or description"
+              value={filters.q}
+              onChange={(event) => setFilters({ ...filters, q: event.target.value })}
+            />
+          </FormLabel>
+        </div>
+      </SectionCard>
+
+      <SectionCard className="border-amber-200 shadow-amber-50" title="Approval Queue" subtitle="Employee-submitted transactions waiting for admin review.">
+        {pendingRows.length === 0 ? (
+          <EmptyState title="No transactions are waiting for review." />
+        ) : (
+          <DataTable>
+            <thead className="bg-amber-50/80 text-left text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Date</th>
+                <th className="px-4 py-3">Dealer</th>
+                <th className="px-4 py-3">Type</th>
+                <th className="px-4 py-3 text-right">Amount</th>
+                <th className="px-4 py-3">Submitted By</th>
+                <th className="px-4 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pendingRows.map((transaction) => (
+                <tr key={transaction.id} className="border-t border-amber-100 bg-amber-50/50">
+                  <td className="px-4 py-3">{transaction.date}</td>
+                  <td className="px-4 py-3 font-medium text-slate-950">{dealers.find((dealer) => dealer.id === transaction.dealerId)?.name}</td>
+                  <td className="px-4 py-3">{transaction.type}</td>
+                  <td className="px-4 py-3 text-right font-semibold">{formatUsd(transaction.amount)}</td>
+                  <td className="px-4 py-3">{transaction.createdByRole || 'admin'}</td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex justify-end gap-2">
+                      <Button variant="primary" onClick={() => updateStatus(transaction.id, 'confirmed')}>
+                        Approve
+                      </Button>
+                      <Button variant="danger" onClick={() => updateStatus(transaction.id, 'rejected')}>
+                        Reject
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </DataTable>
+        )}
+      </SectionCard>
+
+      <SectionCard title="Transaction Ledger" subtitle="All visible transactions matching the current filters.">
+        {rows.length === 0 ? (
+          <EmptyState title="No transactions match the current filters." />
+        ) : (
+          <DataTable>
+            <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Dealer</th>
+                <th className="px-4 py-3">Type</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3 text-right">Amount</th>
+                <th className="px-4 py-3">Order</th>
+                <th className="px-4 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((transaction) => (
+                <tr
+                  key={transaction.id}
+                  className={`border-t border-slate-100 ${
+                    transaction.status === 'pending_review'
+                      ? 'bg-amber-50/60'
+                      : transaction.status === 'rejected'
+                        ? 'bg-red-50/60'
+                        : 'transition hover:bg-slate-50'
+                  }`}
+                >
+                  <td className="px-4 py-3 font-medium text-slate-950">{dealers.find((dealer) => dealer.id === transaction.dealerId)?.name}</td>
+                  <td className="px-4 py-3">{transaction.type}</td>
+                  <td className="px-4 py-3">
+                    <StatusBadge status={transaction.status} />
+                  </td>
+                  <td className="px-4 py-3 text-right font-semibold">{formatUsd(transaction.amount)}</td>
+                  <td className="px-4 py-3">{transaction.orderCode || '-'}</td>
+                  <td className="px-4 py-3 text-right">
+                    {role === 'admin' && transaction.status === 'pending_review' && (
+                      <div className="flex justify-end gap-2">
+                        <Button variant="primary" onClick={() => updateStatus(transaction.id, 'confirmed')}>
+                          Approve
+                        </Button>
+                        <Button variant="danger" onClick={() => updateStatus(transaction.id, 'rejected')}>
+                          Reject
+                        </Button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </DataTable>
+        )}
+      </SectionCard>
     </PageShell>
   );
 }
@@ -1031,15 +1185,17 @@ export function EmployeeProfilePage({
   };
 
   return (
-    <PageShell title="Employee Profile / Commission Ledger" subtitle={employee.name}>
-      <div className="grid md:grid-cols-4 gap-3">
+    <PageShell title="Employee Profile" subtitle={`${employee.name} commission ledger and payment workspace`}>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
           label="Open Commission Balance"
           value={formatUsd(getEmployeeOpenCommissionBalance(employee.id, commissions, allocations))}
+          helper="Remaining unpaid generated commissions."
         />
         <SummaryCard
           label="Current Month Commission"
           value={formatUsd(getCurrentMonthEmployeeCommission(employee.id, commissions))}
+          helper="Generated from eligible assigned statements."
         />
         <SummaryCard
           label="Total Paid Commission"
@@ -1048,88 +1204,126 @@ export function EmployeeProfilePage({
               .filter((commission) => commission.employeeId === employee.id)
               .reduce((total, commission) => total + commission.paidAmount, 0),
           )}
+          helper="Paid amounts recorded on commission rows."
         />
         <SummaryCard
           label="Last Payment"
           value={formatUsd(payments.filter((payment) => payment.employeeId === employee.id).slice(-1)[0]?.amount || 0)}
+          helper="Most recent employee payment amount."
         />
       </div>
 
-      <div className="bg-white border rounded-lg p-4">
-        <h3 className="font-medium mb-2">Record Employee Payment</h3>
-        <div className="grid md:grid-cols-4 gap-2">
-          <input
-            type="date"
-            className="border rounded px-2 py-1"
-            value={form.paymentDate}
-            onChange={(event) => setForm({ ...form, paymentDate: event.target.value })}
-          />
-          <input
-            type="number"
-            min="0.01"
-            className="border rounded px-2 py-1"
-            value={form.amount}
-            onChange={(event) => setForm({ ...form, amount: event.target.value })}
-            placeholder="Amount"
-          />
-          <input
-            className="border rounded px-2 py-1"
-            value={form.description}
-            onChange={(event) => setForm({ ...form, description: event.target.value })}
-            placeholder="Description"
-          />
-          <select
-            className="border rounded px-2 py-1"
-            value={form.mode}
-            onChange={(event) => setForm({ ...form, mode: event.target.value as 'fifo' | 'manual' })}
-          >
-            <option value="fifo">FIFO</option>
-            <option value="manual">Manual</option>
-          </select>
-        </div>
-        {form.mode === 'manual' &&
-          openCommissions.map((open) => (
-            <div key={open.commission.id} className="text-sm mt-1">
-              {open.commission.periodYear}-{open.commission.periodMonth} rem {formatUsd(open.remaining)}
+      <SectionCard title="Record Employee Payment" subtitle="Allocate commission payments with FIFO or manual controls.">
+        <div className="space-y-4 p-5">
+          <div className="grid gap-3 md:grid-cols-4">
+            <FormLabel label="Payment date">
+              <input
+                type="date"
+                className="h-10 w-full px-3"
+                value={form.paymentDate}
+                onChange={(event) => setForm({ ...form, paymentDate: event.target.value })}
+              />
+            </FormLabel>
+            <FormLabel label="Amount">
               <input
                 type="number"
-                className="border rounded px-1 py-0.5 ml-2"
-                value={manual[open.commission.id] || ''}
-                onChange={(event) => setManual({ ...manual, [open.commission.id]: event.target.value })}
+                min="0.01"
+                className="h-10 w-full px-3"
+                value={form.amount}
+                onChange={(event) => setForm({ ...form, amount: event.target.value })}
+                placeholder="0.00"
               />
-            </div>
-          ))}
-        <button className="bg-indigoBrand text-white px-3 py-1 rounded mt-2" onClick={submit}>
-          Record Employee Payment
-        </button>
-      </div>
+            </FormLabel>
+            <FormLabel label="Description">
+              <input
+                className="h-10 w-full px-3"
+                value={form.description}
+                onChange={(event) => setForm({ ...form, description: event.target.value })}
+                placeholder="Commission payment"
+              />
+            </FormLabel>
+            <FormLabel label="Allocation mode">
+              <select
+                className="h-10 w-full px-3"
+                value={form.mode}
+                onChange={(event) => setForm({ ...form, mode: event.target.value as 'fifo' | 'manual' })}
+              >
+                <option value="fifo">FIFO</option>
+                <option value="manual">Manual</option>
+              </select>
+            </FormLabel>
+          </div>
 
-      {rows.length === 0 && (
-        <div className="bg-white border rounded-lg p-4 text-slate-500">No commission or payment records yet.</div>
-      )}
-      <table className="w-full bg-white border rounded-lg text-sm">
-        <thead className="bg-slate-100">
-          <tr>
-            <th className="p-2 text-left">Date</th>
-            <th>Type</th>
-            <th>Amount</th>
-            <th>Running</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => {
-            running += row.amount;
-            return (
-              <tr key={`${row.date}-${index}`} className="border-t">
-                <td className="p-2">{row.date}</td>
-                <td>{row.kind}</td>
-                <td>{formatUsd(row.amount)}</td>
-                <td>{formatUsd(running)}</td>
+          {form.mode === 'fifo' && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+              FIFO applies payment to the oldest open commission rows first.
+            </div>
+          )}
+
+          {form.mode === 'manual' && (
+            <div className="rounded-xl border border-slate-200">
+              {openCommissions.map((open) => (
+                <div
+                  key={open.commission.id}
+                  className="grid items-center gap-3 border-t border-slate-100 px-4 py-3 text-sm first:border-t-0 md:grid-cols-3"
+                >
+                  <span className="font-medium text-slate-950">
+                    {open.commission.periodYear}-{open.commission.periodMonth}
+                  </span>
+                  <span className="text-slate-500">Remaining {formatUsd(open.remaining)}</span>
+                  <input
+                    type="number"
+                    className="h-9 px-3"
+                    value={manual[open.commission.id] || ''}
+                    onChange={(event) => setManual({ ...manual, [open.commission.id]: event.target.value })}
+                    placeholder="Allocate"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+
+          <Button variant="primary" onClick={submit}>
+            Record Employee Payment
+          </Button>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Commission Ledger" subtitle="Commission accruals and employee payment activity.">
+        {rows.length === 0 ? (
+          <EmptyState title="No commission or payment records yet." />
+        ) : (
+          <DataTable>
+            <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Date</th>
+                <th className="px-4 py-3">Type</th>
+                <th className="px-4 py-3 text-right">Amount</th>
+                <th className="px-4 py-3 text-right">Running</th>
               </tr>
-            );
-          })}
-        </tbody>
-      </table>
+            </thead>
+            <tbody>
+              {rows.map((row, index) => {
+                running += row.amount;
+                const isPayment = row.amount < 0;
+                return (
+                  <tr
+                    key={`${row.date}-${index}`}
+                    className={isPayment ? 'border-t border-slate-100 bg-emerald-50/40' : 'border-t border-slate-100 transition hover:bg-slate-50'}
+                  >
+                    <td className="px-4 py-3 text-slate-600">{row.date}</td>
+                    <td className="px-4 py-3 font-medium text-slate-950">{row.kind}</td>
+                    <td className={isPayment ? 'px-4 py-3 text-right font-semibold text-emerald-700' : 'px-4 py-3 text-right font-semibold text-slate-950'}>
+                      {formatUsd(row.amount)}
+                    </td>
+                    <td className="px-4 py-3 text-right font-semibold text-slate-950">{formatUsd(running)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </DataTable>
+        )}
+      </SectionCard>
     </PageShell>
   );
 }
@@ -1146,32 +1340,50 @@ export function AssignmentsPage({ employees, dealers }: { employees: Employee[];
 
   return (
     <PageShell title="Assignments" subtitle="Current mock store access and commission assignments">
-      <table className="w-full bg-white border rounded-lg text-sm">
-        <thead className="bg-slate-100">
-          <tr>
-            <th className="p-3 text-left">Employee</th>
-            <th>Assigned Store</th>
-            <th>Commission Rate</th>
-            <th>Can View Transactions</th>
-            <th>Can Add Transactions</th>
-            <th>Can Edit Transactions</th>
-            <th>Can View Commission</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={`${row.employee.id}-${row.assignment.storeId}`} className="border-t">
-              <td className="p-3">{row.employee.name}</td>
-              <td>{row.store?.name || row.dealer?.name || row.assignment.storeId}</td>
-              <td>{row.assignment.commissionRatePct}%</td>
-              <td>Yes</td>
-              <td>Yes</td>
-              <td>No</td>
-              <td>Yes</td>
+      <SectionCard
+        title="Assignment Matrix"
+        subtitle="Store access, commission rate, and transaction permissions for the current mock employee assignments."
+      >
+        <DataTable>
+          <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="px-4 py-3">Employee</th>
+              <th className="px-4 py-3">Assigned Store</th>
+              <th className="px-4 py-3 text-right">Commission Rate</th>
+              <th className="px-4 py-3">View Transactions</th>
+              <th className="px-4 py-3">Add Transactions</th>
+              <th className="px-4 py-3">Edit Transactions</th>
+              <th className="px-4 py-3">View Commission</th>
+              <th className="px-4 py-3 text-right">Action</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={`${row.employee.id}-${row.assignment.storeId}`} className="border-t border-slate-100 transition hover:bg-slate-50">
+                <td className="px-4 py-3">
+                  <p className="font-medium text-slate-950">{row.employee.name}</p>
+                  <p className="text-xs text-slate-500">{row.employee.roleTitle}</p>
+                </td>
+                <td className="px-4 py-3 font-medium text-slate-900">{row.store?.name || row.dealer?.name || row.assignment.storeId}</td>
+                <td className="px-4 py-3 text-right font-semibold text-slate-950">{row.assignment.commissionRatePct}%</td>
+                <td className="px-4 py-3"><PermissionBadge enabled /></td>
+                <td className="px-4 py-3"><PermissionBadge enabled /></td>
+                <td className="px-4 py-3"><PermissionBadge enabled={false} /></td>
+                <td className="px-4 py-3"><PermissionBadge enabled /></td>
+                <td className="px-4 py-3 text-right">
+                  <button
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-500 shadow-sm"
+                    disabled
+                    title="Assignment editing is prepared visually but not implemented yet."
+                  >
+                    Edit
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </DataTable>
+      </SectionCard>
     </PageShell>
   );
 }
