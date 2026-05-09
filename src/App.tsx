@@ -95,7 +95,7 @@ export function App() {
           )
         }
       >
-        <Route index element={<DashboardPage dealers={dealers} statements={statements} transactions={transactions} allocations={dealerPaymentAllocations} role={role} employee={employee} employeeCommissions={employeeCommissions} employeePaymentAllocations={employeePaymentAllocations} />} />
+        <Route index element={<DashboardPage dealers={dealers} statements={statements} transactions={transactions} allocations={dealerPaymentAllocations} role={role} employee={employee} employeeCommissions={employeeCommissions} employeePaymentAllocations={employeePaymentAllocations} dealerPayments={dealerPayments} employeePayments={employeePayments} />} />
         <Route path="dealers" element={<DealersPage dealers={dealers} statements={statements} transactions={transactions} allocations={dealerPaymentAllocations} storeIds={role === 'employee' ? assignedStoreIds : undefined} />} />
         <Route path="dealers/:dealerId" element={<DealerProfilePage role={role} assignedStoreIds={assignedStoreIds} dealers={dealers} statements={statements} transactions={transactions} setStatements={setStatements} setFlash={setFlash} payments={dealerPayments} allocations={dealerPaymentAllocations} setPayments={setDealerPayments} setAllocations={setDealerPaymentAllocations} employees={employees} employeeCommissions={employeeCommissions} setEmployeeCommissions={setEmployeeCommissions} />} />
         <Route path="statements/:statementId" element={<StatementDetailPage role={role} assignedStoreIds={assignedStoreIds} dealers={dealers} statements={statements} transactions={transactions} setTransactions={setTransactions} setFlash={setFlash} allocations={dealerPaymentAllocations} employees={employees} />} />
