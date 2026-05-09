@@ -1432,7 +1432,7 @@ export function AssignmentsPage({
 }: {
   employees: Employee[];
   dealers: Dealer[];
-  onUpdateAssignment: (employeeId: string, assignment: Assignment) => void;
+  onUpdateAssignment: (employeeId: string, assignment: Assignment) => Promise<void> | void;
 }) {
   const [editing, setEditing] = useState<null | {
     employeeId: string;
@@ -1442,6 +1442,7 @@ export function AssignmentsPage({
     rate: string;
   }>(null);
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
   const rows = employees.flatMap((employee) =>
     employee.assignments.map((assignment) => ({
       employee,
@@ -1468,7 +1469,7 @@ export function AssignmentsPage({
     );
   };
 
-  const saveAssignment = () => {
+  const saveAssignment = async () => {
     if (!editing) return;
     const trimmedRate = editing.rate.trim();
     if (!trimmedRate) {
@@ -1482,12 +1483,21 @@ export function AssignmentsPage({
       return;
     }
 
-    onUpdateAssignment(editing.employeeId, {
-      ...editing.assignment,
-      commissionRatePct,
-    });
-    setEditing(null);
+    setSaving(true);
     setError('');
+
+    try {
+      await onUpdateAssignment(editing.employeeId, {
+        ...editing.assignment,
+        commissionRatePct,
+      });
+      setEditing(null);
+    } catch (saveError) {
+      const maybe = saveError as { message?: string };
+      setError(maybe?.message || 'Assignment could not be saved.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -1618,7 +1628,7 @@ export function AssignmentsPage({
             <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4">
               <Button onClick={() => setEditing(null)}>Cancel</Button>
               <Button variant="primary" onClick={saveAssignment}>
-                Save Assignment
+                {saving ? 'Saving...' : 'Save Assignment'}
               </Button>
             </div>
           </div>

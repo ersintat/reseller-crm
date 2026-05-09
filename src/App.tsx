@@ -14,6 +14,7 @@ import {
   EmployeeAssignmentState,
   fetchFinancialReferenceData,
   FinancialReferenceData,
+  updateEmployeeStoreAssignment,
 } from './lib/financialReferenceService';
 import {
   approveTransaction,
@@ -45,12 +46,14 @@ const initialEmployeeCommissions = generateEmployeeCommissionsForStatements(
 
 const normalizeAssignment = (assignment: Assignment): Assignment => ({
   storeId: assignment.storeId,
+  dealerId: assignment.dealerId,
   commissionRatePct: Number(assignment.commissionRatePct) || 0,
   canViewTransactions: assignment.canViewTransactions ?? true,
   canAddTransactions: assignment.canAddTransactions ?? true,
   canEditTransactions: assignment.canEditTransactions ?? false,
   canViewCommission: assignment.canViewCommission ?? true,
   status: assignment.status ?? 'active',
+  supabaseId: assignment.supabaseId,
 });
 
 const initialEmployeeAssignments: EmployeeAssignmentState = employees.reduce((output, employee) => {
@@ -594,7 +597,7 @@ export function App() {
     }
   };
 
-  const updateAssignment = (employeeId: string, nextAssignment: Assignment) => {
+  const updateAssignment = async (employeeId: string, nextAssignment: Assignment) => {
     const updateState = (previous: EmployeeAssignmentState | null): EmployeeAssignmentState => {
       const currentState = previous ?? {};
       const current = currentState[employeeId] || [];
@@ -607,7 +610,45 @@ export function App() {
     };
 
     if (usingSupabaseReferenceData) {
-      setSupabaseAssignmentState(updateState);
+      if (!nextAssignment.supabaseId) {
+        setFlash('Assignment could not be saved: missing Supabase assignment id.');
+        throw new Error('Missing Supabase assignment id.');
+      }
+
+      try {
+        const updated = await updateEmployeeStoreAssignment(nextAssignment.supabaseId, nextAssignment);
+        const mergedAssignment = normalizeAssignment({
+          ...nextAssignment,
+          ...updated,
+          storeId: nextAssignment.storeId,
+          dealerId: nextAssignment.dealerId,
+          supabaseId: nextAssignment.supabaseId,
+        });
+        setSupabaseAssignmentState((previous) => {
+          const currentState = previous ?? {};
+          const current = currentState[employeeId] || [];
+          return {
+            ...currentState,
+            [employeeId]: current.map((assignment) =>
+              assignment.supabaseId === nextAssignment.supabaseId ? mergedAssignment : assignment,
+            ),
+          };
+        });
+        setSupabaseReferenceAssignments((previous) => {
+          if (!previous) return previous;
+          const current = previous[employeeId] || [];
+          return {
+            ...previous,
+            [employeeId]: current.map((assignment) =>
+              assignment.supabaseId === nextAssignment.supabaseId ? mergedAssignment : assignment,
+            ),
+          };
+        });
+        setFlash('Assignment saved in Supabase.');
+      } catch (error) {
+        setFlash(friendlySupabaseError(error, 'Assignment could not be saved'));
+        throw error;
+      }
       return;
     }
 
@@ -641,7 +682,7 @@ export function App() {
 
   const dataModeLabel = usingSupabaseReferenceData
     ? usingSupabaseActivityData
-      ? 'Supabase settlement & commissions · Local assignment edits'
+      ? 'Supabase settlement, commissions & assignments'
       : 'Supabase reference data · Local settlement activity'
     : auth.authEnabled
       ? 'Mock reference data · Local settlement activity'

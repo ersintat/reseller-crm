@@ -68,14 +68,22 @@ Milestone 6E added Supabase-backed dealer payments and dealer payment allocation
 5. Statement paid and remaining values are still derived in the UI from allocation rows. Cached statement `paid_amount` and `remaining_amount` updates in Supabase are deferred.
 6. Employee commissions, employee payments, and employee payment allocations remained local/localStorage-backed in 6E.
 
-Milestone 6F adds Supabase-backed employee commissions, employee payments, and employee payment allocations in real auth mode:
+Milestone 6F added Supabase-backed employee commissions, employee payments, and employee payment allocations in real auth mode:
 
 1. Employee commissions, employee payments, and employee payment allocations load from Supabase after login.
 2. Commission generation still uses the existing frontend helper logic and writes calculated rows with `upsert` on `employee_id + statement_id`.
 3. Existing `paid` and `partially_paid` commission rows are not overwritten by regeneration.
 4. Admin Record Employee Payment writes one `employee_payments` row plus its `employee_payment_allocations` rows.
 5. Employee commission paid/remaining/status cached columns are updated after employee payment allocation. Statement paid/remaining cached columns are still deferred.
-6. Assignment edit persistence remains a local override until a later milestone.
+6. Assignment edit persistence remained a local override in 6F.
 7. Calculation RPCs/triggers remain deferred; the frontend helper layer remains the source for settlement and commission calculations.
 
-The next milestone should persist assignment edits or add database RPCs for authoritative recalculation and transactional payment allocation.
+Milestone 6G adds Supabase-backed assignment editing in real auth mode:
+
+1. Admin assignment edits write to `employee_store_assignments`.
+2. Commission rate, transaction permission flags, commission visibility, and active/inactive status persist after refresh.
+3. Demo mode still edits assignment state through localStorage.
+4. Rate changes affect future generated commission rows only; paid and partially paid commission rows are not retroactively overwritten.
+5. Permission changes immediately affect employee dealer visibility, transaction form access, and My Commissions visibility through the existing assignment-derived UI state.
+
+The next milestone should add database RPCs for authoritative recalculation and transactional payment allocation.

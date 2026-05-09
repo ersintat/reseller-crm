@@ -40,6 +40,16 @@ export interface FinancialReferenceData {
   assignmentState: EmployeeAssignmentState;
 }
 
+type AssignmentUpdate = Pick<
+  Assignment,
+  | 'commissionRatePct'
+  | 'canViewTransactions'
+  | 'canAddTransactions'
+  | 'canEditTransactions'
+  | 'canViewCommission'
+  | 'status'
+>;
+
 const normalizeName = (value: string) => value.trim().toLowerCase();
 
 const findMockDealer = (row: Pick<DealerRow, 'dealer_name' | 'store_name'>) =>
@@ -160,5 +170,44 @@ export async function fetchFinancialReferenceData(): Promise<FinancialReferenceD
     dealers,
     employees,
     assignmentState,
+  };
+}
+
+export async function updateEmployeeStoreAssignment(
+  assignmentId: string,
+  updates: Partial<AssignmentUpdate>,
+): Promise<Assignment> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+
+  const patch: Partial<AssignmentRow> = {};
+  if (updates.commissionRatePct !== undefined) patch.commission_rate = updates.commissionRatePct;
+  if (updates.canViewTransactions !== undefined) patch.can_view_transactions = updates.canViewTransactions;
+  if (updates.canAddTransactions !== undefined) patch.can_add_transactions = updates.canAddTransactions;
+  if (updates.canEditTransactions !== undefined) patch.can_edit_transactions = updates.canEditTransactions;
+  if (updates.canViewCommission !== undefined) patch.can_view_commission = updates.canViewCommission;
+  if (updates.status !== undefined) patch.status = updates.status;
+
+  const { data, error } = await supabase
+    .from('employee_store_assignments')
+    .update(patch)
+    .eq('id', assignmentId)
+    .select(
+      'id,employee_id,dealer_id,commission_rate,can_view_transactions,can_add_transactions,can_edit_transactions,can_view_commission,status',
+    )
+    .single();
+
+  if (error) throw error;
+
+  const row = data as AssignmentRow;
+  return {
+    storeId: row.dealer_id,
+    dealerId: row.dealer_id,
+    commissionRatePct: toNumber(row.commission_rate),
+    canViewTransactions: row.can_view_transactions,
+    canAddTransactions: row.can_add_transactions,
+    canEditTransactions: row.can_edit_transactions,
+    canViewCommission: row.can_view_commission,
+    status: row.status,
+    supabaseId: row.id,
   };
 }
