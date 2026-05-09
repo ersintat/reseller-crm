@@ -57,7 +57,7 @@ begin
 end;
 $$;
 
-create table public.dealers (
+create table if not exists public.dealers (
   id uuid primary key default gen_random_uuid(),
   dealer_name text not null,
   store_name text not null,
@@ -78,7 +78,7 @@ create table public.dealers (
   )
 );
 
-create table public.employees (
+create table if not exists public.employees (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   email text,
@@ -88,7 +88,7 @@ create table public.employees (
   updated_at timestamptz not null default now()
 );
 
-create table public.employee_store_assignments (
+create table if not exists public.employee_store_assignments (
   id uuid primary key default gen_random_uuid(),
   employee_id uuid not null references public.employees(id) on delete cascade,
   dealer_id uuid not null references public.dealers(id) on delete cascade,
@@ -97,14 +97,14 @@ create table public.employee_store_assignments (
   can_add_transactions boolean not null default true,
   can_edit_transactions boolean not null default false,
   can_view_commission boolean not null default true,
-  created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint employee_store_assignments_unique_pair unique (employee_id, dealer_id),
   constraint employee_store_assignments_commission_rate_range check (commission_rate between 0 and 100),
-  status public.assignment_status not null default 'active'
+  status public.assignment_status not null default 'active',
+  created_at timestamptz not null default now()
 );
 
-create table public.statements (
+create table if not exists public.statements (
   id uuid primary key default gen_random_uuid(),
   dealer_id uuid not null references public.dealers(id) on delete cascade,
   period_month int not null,
@@ -142,7 +142,7 @@ create table public.statements (
   )
 );
 
-create table public.transactions (
+create table if not exists public.transactions (
   id uuid primary key default gen_random_uuid(),
   dealer_id uuid not null references public.dealers(id) on delete cascade,
   statement_id uuid not null references public.statements(id) on delete cascade,
@@ -177,7 +177,7 @@ create table public.transactions (
   )
 );
 
-create table public.dealer_payments (
+create table if not exists public.dealer_payments (
   id uuid primary key default gen_random_uuid(),
   dealer_id uuid not null references public.dealers(id) on delete cascade,
   amount numeric(14,2) not null,
@@ -191,7 +191,7 @@ create table public.dealer_payments (
   constraint dealer_payments_positive_amount check (amount > 0)
 );
 
-create table public.dealer_payment_allocations (
+create table if not exists public.dealer_payment_allocations (
   id uuid primary key default gen_random_uuid(),
   payment_id uuid not null references public.dealer_payments(id) on delete cascade,
   statement_id uuid not null references public.statements(id) on delete cascade,
@@ -201,7 +201,7 @@ create table public.dealer_payment_allocations (
   constraint dealer_payment_allocations_unique_pair unique (payment_id, statement_id)
 );
 
-create table public.employee_commissions (
+create table if not exists public.employee_commissions (
   id uuid primary key default gen_random_uuid(),
   employee_id uuid not null references public.employees(id) on delete cascade,
   dealer_id uuid not null references public.dealers(id) on delete cascade,
@@ -236,7 +236,7 @@ create table public.employee_commissions (
   )
 );
 
-create table public.employee_payments (
+create table if not exists public.employee_payments (
   id uuid primary key default gen_random_uuid(),
   employee_id uuid not null references public.employees(id) on delete cascade,
   amount numeric(14,2) not null,
@@ -250,7 +250,7 @@ create table public.employee_payments (
   constraint employee_payments_positive_amount check (amount > 0)
 );
 
-create table public.employee_payment_allocations (
+create table if not exists public.employee_payment_allocations (
   id uuid primary key default gen_random_uuid(),
   payment_id uuid not null references public.employee_payments(id) on delete cascade,
   commission_id uuid not null references public.employee_commissions(id) on delete cascade,
@@ -260,59 +260,67 @@ create table public.employee_payment_allocations (
   constraint employee_payment_allocations_unique_pair unique (payment_id, commission_id)
 );
 
+drop trigger if exists dealers_set_updated_at on public.dealers;
 create trigger dealers_set_updated_at
 before update on public.dealers
 for each row execute function public.set_updated_at();
 
+drop trigger if exists employees_set_updated_at on public.employees;
 create trigger employees_set_updated_at
 before update on public.employees
 for each row execute function public.set_updated_at();
 
+drop trigger if exists employee_store_assignments_set_updated_at on public.employee_store_assignments;
 create trigger employee_store_assignments_set_updated_at
 before update on public.employee_store_assignments
 for each row execute function public.set_updated_at();
 
+drop trigger if exists statements_set_updated_at on public.statements;
 create trigger statements_set_updated_at
 before update on public.statements
 for each row execute function public.set_updated_at();
 
+drop trigger if exists transactions_set_updated_at on public.transactions;
 create trigger transactions_set_updated_at
 before update on public.transactions
 for each row execute function public.set_updated_at();
 
+drop trigger if exists dealer_payments_set_updated_at on public.dealer_payments;
 create trigger dealer_payments_set_updated_at
 before update on public.dealer_payments
 for each row execute function public.set_updated_at();
 
+drop trigger if exists employee_commissions_set_updated_at on public.employee_commissions;
 create trigger employee_commissions_set_updated_at
 before update on public.employee_commissions
 for each row execute function public.set_updated_at();
 
+drop trigger if exists employee_payments_set_updated_at on public.employee_payments;
 create trigger employee_payments_set_updated_at
 before update on public.employee_payments
 for each row execute function public.set_updated_at();
 
-create index dealers_status_idx on public.dealers(status);
-create index employees_user_id_idx on public.employees(user_id);
-create index employees_status_idx on public.employees(status);
-create index employee_store_assignments_employee_id_idx on public.employee_store_assignments(employee_id);
-create index employee_store_assignments_dealer_id_idx on public.employee_store_assignments(dealer_id);
-create index employee_store_assignments_status_idx on public.employee_store_assignments(status);
-create index statements_dealer_period_idx on public.statements(dealer_id, period_year, period_month);
-create index statements_status_idx on public.statements(status);
-create index transactions_statement_id_idx on public.transactions(statement_id);
-create index transactions_dealer_status_idx on public.transactions(dealer_id, status);
-create index transactions_created_by_idx on public.transactions(created_by);
-create index dealer_payments_dealer_id_idx on public.dealer_payments(dealer_id);
-create index dealer_payment_allocations_payment_id_idx on public.dealer_payment_allocations(payment_id);
-create index dealer_payment_allocations_statement_id_idx on public.dealer_payment_allocations(statement_id);
-create index employee_commissions_employee_id_idx on public.employee_commissions(employee_id);
-create index employee_commissions_dealer_id_idx on public.employee_commissions(dealer_id);
-create index employee_commissions_statement_id_idx on public.employee_commissions(statement_id);
-create index employee_commissions_status_idx on public.employee_commissions(status);
-create index employee_payments_employee_id_idx on public.employee_payments(employee_id);
-create index employee_payment_allocations_payment_id_idx on public.employee_payment_allocations(payment_id);
-create index employee_payment_allocations_commission_id_idx on public.employee_payment_allocations(commission_id);
+create index if not exists dealers_status_idx on public.dealers(status);
+create index if not exists employees_user_id_idx on public.employees(user_id);
+create index if not exists employees_status_idx on public.employees(status);
+create index if not exists employee_store_assignments_employee_id_idx on public.employee_store_assignments(employee_id);
+create index if not exists employee_store_assignments_dealer_id_idx on public.employee_store_assignments(dealer_id);
+create index if not exists employee_store_assignments_status_idx on public.employee_store_assignments(status);
+create index if not exists statements_dealer_period_idx on public.statements(dealer_id, period_year, period_month);
+create index if not exists statements_status_idx on public.statements(status);
+create index if not exists transactions_statement_id_idx on public.transactions(statement_id);
+create index if not exists transactions_dealer_status_idx on public.transactions(dealer_id, status);
+create index if not exists transactions_created_by_idx on public.transactions(created_by);
+create index if not exists dealer_payments_dealer_id_idx on public.dealer_payments(dealer_id);
+create index if not exists dealer_payment_allocations_payment_id_idx on public.dealer_payment_allocations(payment_id);
+create index if not exists dealer_payment_allocations_statement_id_idx on public.dealer_payment_allocations(statement_id);
+create index if not exists employee_commissions_employee_id_idx on public.employee_commissions(employee_id);
+create index if not exists employee_commissions_dealer_id_idx on public.employee_commissions(dealer_id);
+create index if not exists employee_commissions_statement_id_idx on public.employee_commissions(statement_id);
+create index if not exists employee_commissions_status_idx on public.employee_commissions(status);
+create index if not exists employee_payments_employee_id_idx on public.employee_payments(employee_id);
+create index if not exists employee_payment_allocations_payment_id_idx on public.employee_payment_allocations(payment_id);
+create index if not exists employee_payment_allocations_commission_id_idx on public.employee_payment_allocations(commission_id);
 
 create or replace function public.is_admin()
 returns boolean
@@ -434,6 +442,7 @@ alter table public.employee_commissions enable row level security;
 alter table public.employee_payments enable row level security;
 alter table public.employee_payment_allocations enable row level security;
 
+drop policy if exists "Admins can manage dealers" on public.dealers;
 create policy "Admins can manage dealers"
 on public.dealers
 for all
@@ -441,12 +450,14 @@ to authenticated
 using (public.is_admin())
 with check (public.is_admin());
 
+drop policy if exists "Employees can select assigned dealers" on public.dealers;
 create policy "Employees can select assigned dealers"
 on public.dealers
 for select
 to authenticated
 using (public.is_assigned_to_dealer(id));
 
+drop policy if exists "Admins can manage employees" on public.employees;
 create policy "Admins can manage employees"
 on public.employees
 for all
@@ -454,12 +465,14 @@ to authenticated
 using (public.is_admin())
 with check (public.is_admin());
 
+drop policy if exists "Employees can select own employee row" on public.employees;
 create policy "Employees can select own employee row"
 on public.employees
 for select
 to authenticated
 using (user_id = auth.uid());
 
+drop policy if exists "Admins can manage employee store assignments" on public.employee_store_assignments;
 create policy "Admins can manage employee store assignments"
 on public.employee_store_assignments
 for all
@@ -467,12 +480,14 @@ to authenticated
 using (public.is_admin())
 with check (public.is_admin());
 
+drop policy if exists "Employees can select own active assignments" on public.employee_store_assignments;
 create policy "Employees can select own active assignments"
 on public.employee_store_assignments
 for select
 to authenticated
 using (employee_id = public.current_employee_id() and status = 'active');
 
+drop policy if exists "Admins can manage statements" on public.statements;
 create policy "Admins can manage statements"
 on public.statements
 for all
@@ -480,12 +495,14 @@ to authenticated
 using (public.is_admin())
 with check (public.is_admin());
 
+drop policy if exists "Employees can select statements for viewable dealers" on public.statements;
 create policy "Employees can select statements for viewable dealers"
 on public.statements
 for select
 to authenticated
 using (public.can_employee_view_dealer(dealer_id));
 
+drop policy if exists "Admins can manage transactions" on public.transactions;
 create policy "Admins can manage transactions"
 on public.transactions
 for all
@@ -493,12 +510,14 @@ to authenticated
 using (public.is_admin())
 with check (public.is_admin());
 
+drop policy if exists "Employees can select transactions for viewable dealers" on public.transactions;
 create policy "Employees can select transactions for viewable dealers"
 on public.transactions
 for select
 to authenticated
 using (public.can_employee_view_dealer(dealer_id));
 
+drop policy if exists "Employees can insert pending transactions for assigned dealers" on public.transactions;
 create policy "Employees can insert pending transactions for assigned dealers"
 on public.transactions
 for insert
@@ -510,6 +529,7 @@ with check (
   and status = 'pending_review'
 );
 
+drop policy if exists "Admins can manage dealer payments" on public.dealer_payments;
 create policy "Admins can manage dealer payments"
 on public.dealer_payments
 for all
@@ -517,6 +537,7 @@ to authenticated
 using (public.is_admin())
 with check (public.is_admin());
 
+drop policy if exists "Admins can manage dealer payment allocations" on public.dealer_payment_allocations;
 create policy "Admins can manage dealer payment allocations"
 on public.dealer_payment_allocations
 for all
@@ -524,6 +545,7 @@ to authenticated
 using (public.is_admin())
 with check (public.is_admin());
 
+drop policy if exists "Admins can manage employee commissions" on public.employee_commissions;
 create policy "Admins can manage employee commissions"
 on public.employee_commissions
 for all
@@ -531,6 +553,7 @@ to authenticated
 using (public.is_admin())
 with check (public.is_admin());
 
+drop policy if exists "Employees can select own visible commissions" on public.employee_commissions;
 create policy "Employees can select own visible commissions"
 on public.employee_commissions
 for select
@@ -540,6 +563,7 @@ using (
   and public.can_employee_view_commission(dealer_id)
 );
 
+drop policy if exists "Admins can manage employee payments" on public.employee_payments;
 create policy "Admins can manage employee payments"
 on public.employee_payments
 for all
@@ -547,6 +571,7 @@ to authenticated
 using (public.is_admin())
 with check (public.is_admin());
 
+drop policy if exists "Admins can manage employee payment allocations" on public.employee_payment_allocations;
 create policy "Admins can manage employee payment allocations"
 on public.employee_payment_allocations
 for all
