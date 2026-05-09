@@ -38,11 +38,21 @@ Milestone 6B adds the financial database foundation only. The React app still us
 
 ## Next Milestone
 
-Milestone 6C adds read-only Supabase financial reference data:
+Milestone 6C added read-only Supabase financial reference data:
 
 1. Dealers, employees, and employee-store assignments can be loaded from Supabase after login.
 2. Statement, transaction, dealer payment, employee commission, and employee payment activity still uses local React state and `localStorage`.
 3. Reference-data load failures fall back to the local mock reference data with a non-blocking warning.
 4. Assignment edits in this phase are local overrides only; they are not written back to Supabase.
 
-The next milestone should either add read-only statements/transactions or introduce database write services/RPCs for controlled transaction creation and approval.
+Milestone 6D adds Supabase-backed statements and transactions in real auth mode:
+
+1. Statements and transactions load from Supabase after login.
+2. Admin statement creation writes to Supabase and relies on the database unique constraint to block duplicate dealer/month/year statements.
+3. Admin-created transactions are inserted as `confirmed`.
+4. Employee-created transactions are inserted as `pending_review`.
+5. Admin approval/rejection updates transaction status in Supabase.
+6. Dealer payments, payment allocations, employee commissions, employee payments, and employee payment allocations remain local/localStorage-backed.
+7. Statement totals are still calculated in the frontend helper layer. Cached statement total updates are intentionally deferred until an RPC/recalculation milestone.
+
+The next milestone should migrate dealer payments and payment allocations or add database RPCs for authoritative statement recalculation.

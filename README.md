@@ -78,22 +78,22 @@ If both Supabase env vars are present:
 - `/my-commissions`
 
 ## What Remains Mock / LocalStorage
-Milestone 6C can load these reference tables from Supabase in read-only mode after login:
+In real auth mode, the app now loads these tables from Supabase:
 - dealers
 - employees
 - employee store assignments
-
-These areas intentionally remain mock/localStorage-backed:
 - statements
 - transactions
+
+These areas intentionally remain mock/localStorage-backed:
 - dealer payments and allocations
 - employee commissions, payments, and allocations
 - settlement calculations and approval workflow state
 - assignment edits made in the UI during this milestone
 
-When Supabase reference data is active, the app shows: `Supabase reference data · Local settlement activity`.
+When Supabase activity data is active, the app shows: `Supabase statements & transactions · Local payments & commissions`.
 
-Do not write financial data to Supabase until a later milestone adds database write services or RPCs.
+Statement and transaction writes use Supabase in auth mode. Cached statement totals are not authoritative yet; the UI still calculates totals with the existing frontend helpers. Dealer payments, payment allocations, employee commissions, and employee payments will move in later milestones.
 
 ## Demo persistence
 - The mock app state is persisted to `localStorage` using a versioned key prefix: `dealer-settlement-manager:v1`.

@@ -1,8 +1,8 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
-import { useEffect, useMemo, useState } from 'react';
+import { type SetStateAction, useEffect, useMemo, useState } from 'react';
 import { AppLayout } from './components/layout/AppLayout';
 import { dealers, employees, initialStatements, initialTransactions } from './data/mockData';
-import { Assignment, DealerPayment, DealerPaymentAllocation, Employee, EmployeeCommission, EmployeePayment, EmployeePaymentAllocation, Role, SettlementTransaction, Statement } from './types';
+import { Assignment, Dealer, DealerPayment, DealerPaymentAllocation, Employee, EmployeeCommission, EmployeePayment, EmployeePaymentAllocation, Role, SettlementTransaction, Statement, TransactionStatus } from './types';
 import { DashboardPage } from './pages/DashboardPage';
 import { DealersPage } from './pages/DealersPage';
 import { AssignmentsPage, DealerProfilePage, EmployeeProfilePage, EmployeesPage, MyCommissionsPage, SettingsPage, StatementDetailPage, TransactionsPage } from './pages/PlaceholderPages';
@@ -15,6 +15,16 @@ import {
   fetchFinancialReferenceData,
   FinancialReferenceData,
 } from './lib/financialReferenceService';
+import {
+  approveTransaction,
+  createStatement as createSupabaseStatement,
+  createTransaction as createSupabaseTransaction,
+  fetchStatements,
+  fetchTransactions,
+  rejectTransaction,
+  updateStatementStatus,
+  type CreateTransactionInput,
+} from './lib/settlementActivityService';
 
 const initialEmployeeCommissions = generateEmployeeCommissionsForStatements(
   initialStatements,
@@ -67,6 +77,10 @@ export function App() {
   const [supabaseReferenceAssignments, setSupabaseReferenceAssignments] = useState<EmployeeAssignmentState | null>(null);
   const [referenceLoading, setReferenceLoading] = useState(false);
   const [referenceError, setReferenceError] = useState('');
+  const [supabaseStatements, setSupabaseStatements] = useState<Statement[] | null>(null);
+  const [supabaseTransactions, setSupabaseTransactions] = useState<SettlementTransaction[] | null>(null);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityError, setActivityError] = useState('');
 
   useEffect(() => {
     if (!auth.authEnabled || !auth.user) {
@@ -115,6 +129,50 @@ export function App() {
   const activeDealers = usingSupabaseReferenceData ? supabaseReferenceData!.dealers : dealers;
   const baseEmployees = usingSupabaseReferenceData ? supabaseReferenceData!.employees : employees;
   const activeAssignmentState = usingSupabaseReferenceData ? supabaseAssignmentState! : employeeAssignments;
+
+  useEffect(() => {
+    if (!usingSupabaseReferenceData) {
+      setSupabaseStatements(null);
+      setSupabaseTransactions(null);
+      setActivityError('');
+      setActivityLoading(false);
+      return;
+    }
+
+    let active = true;
+    setActivityLoading(true);
+    setActivityError('');
+
+    Promise.all([fetchStatements(activeDealers), fetchTransactions(activeDealers)])
+      .then(([nextStatements, nextTransactions]) => {
+        if (!active) return;
+        setSupabaseStatements(nextStatements);
+        setSupabaseTransactions(nextTransactions);
+      })
+      .catch((error) => {
+        if (!active) return;
+        console.warn('Failed to load Supabase statements and transactions.', error);
+        setSupabaseStatements(null);
+        setSupabaseTransactions(null);
+        setActivityError('Supabase statements and transactions could not be loaded. The app is using local settlement activity.');
+      })
+      .finally(() => {
+        if (active) setActivityLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [activeDealers, usingSupabaseReferenceData]);
+
+  const usingSupabaseActivityData = Boolean(
+    usingSupabaseReferenceData &&
+      supabaseStatements &&
+      supabaseTransactions &&
+      !activityError,
+  );
+  const activeStatements = usingSupabaseActivityData ? supabaseStatements! : statements;
+  const activeTransactions = usingSupabaseActivityData ? supabaseTransactions! : transactions;
   const employeesWithAssignments = useMemo(
     () => hydrateEmployeesWithAssignments(baseEmployees, activeAssignmentState),
     [activeAssignmentState, baseEmployees],
@@ -176,15 +234,107 @@ export function App() {
   useEffect(() => {
     setEmployeeCommissions((existing) => {
       const generated = generateEmployeeCommissionsForStatements(
-        statements,
+        activeStatements,
         activeDealers,
         employeesWithAssignments,
-        transactions,
+        activeTransactions,
       );
       const existingIds = new Set(existing.map((commission) => commission.id));
       return [...existing, ...generated.filter((commission) => !existingIds.has(commission.id))];
     });
-  }, [activeDealers, statements, transactions, employeesWithAssignments]);
+  }, [activeDealers, activeStatements, activeTransactions, employeesWithAssignments]);
+
+  const setActiveStatements = (value: SetStateAction<Statement[]>) => {
+    if (usingSupabaseActivityData) {
+      setSupabaseStatements((previous) => {
+        const current = previous ?? [];
+        return typeof value === 'function' ? value(current) : value;
+      });
+      return;
+    }
+
+    setStatements(value);
+  };
+
+  const setActiveTransactions = (value: SetStateAction<SettlementTransaction[]>) => {
+    if (usingSupabaseActivityData) {
+      setSupabaseTransactions((previous) => {
+        const current = previous ?? [];
+        return typeof value === 'function' ? value(current) : value;
+      });
+      return;
+    }
+
+    setTransactions(value);
+  };
+
+  const friendlySupabaseError = (error: unknown, fallback: string) => {
+    const maybe = error as { code?: string; message?: string };
+    if (maybe?.code === '23505') return 'A statement for this dealer and month already exists.';
+    return maybe?.message ? `${fallback}: ${maybe.message}` : fallback;
+  };
+
+  const handleCreateStatement = async (dealer: Dealer, month: string) => {
+    if (!usingSupabaseActivityData) return;
+
+    try {
+      const created = await createSupabaseStatement(dealer, month);
+      setSupabaseStatements((previous) => [...(previous ?? []), created]);
+      setFlash('Statement created in Supabase.');
+    } catch (error) {
+      setFlash(friendlySupabaseError(error, 'Statement could not be created'));
+    }
+  };
+
+  const handleUpdateStatementStatus = async (statement: Statement, status: Statement['status']) => {
+    if (!usingSupabaseActivityData) return;
+
+    try {
+      await updateStatementStatus(statement.supabaseId ?? statement.id, status);
+      setSupabaseStatements((previous) =>
+        (previous ?? []).map((row) => (row.id === statement.id ? { ...row, status } : row)),
+      );
+      setFlash(status === 'closed' ? 'Statement closed in Supabase.' : 'Statement updated in Supabase.');
+    } catch (error) {
+      setFlash(friendlySupabaseError(error, 'Statement could not be updated'));
+    }
+  };
+
+  const handleCreateTransaction = async (
+    statement: Statement,
+    dealer: Dealer,
+    input: CreateTransactionInput,
+  ) => {
+    if (!usingSupabaseActivityData) return;
+
+    try {
+      const created = await createSupabaseTransaction({ dealer, statement, input, role });
+      setSupabaseTransactions((previous) => [created, ...(previous ?? [])]);
+      setFlash(role === 'admin' ? 'Transaction added and confirmed in Supabase.' : 'Transaction submitted for admin review.');
+    } catch (error) {
+      setFlash(friendlySupabaseError(error, 'Transaction could not be created'));
+    }
+  };
+
+  const handleTransactionStatus = async (transactionId: string, status: TransactionStatus) => {
+    if (!usingSupabaseActivityData) return;
+
+    try {
+      if (status === 'confirmed') {
+        await approveTransaction(transactionId);
+      } else if (status === 'rejected') {
+        await rejectTransaction(transactionId);
+      }
+      setSupabaseTransactions((previous) =>
+        (previous ?? []).map((transaction) =>
+          transaction.id === transactionId ? { ...transaction, status } : transaction,
+        ),
+      );
+      setFlash(status === 'confirmed' ? 'Transaction approved.' : 'Transaction rejected.');
+    } catch (error) {
+      setFlash(friendlySupabaseError(error, 'Transaction status could not be updated'));
+    }
+  };
 
   const updateAssignment = (employeeId: string, nextAssignment: Assignment) => {
     const updateState = (previous: EmployeeAssignmentState | null): EmployeeAssignmentState => {
@@ -232,13 +382,18 @@ export function App() {
   };
 
   const dataModeLabel = usingSupabaseReferenceData
-    ? 'Supabase reference data · Local settlement activity'
+    ? usingSupabaseActivityData
+      ? 'Supabase statements & transactions · Local payments & commissions'
+      : 'Supabase reference data · Local settlement activity'
     : auth.authEnabled
       ? 'Mock reference data · Local settlement activity'
-      : 'Demo role switcher · Local settlement activity';
+      : 'Demo mode · Local settlement activity';
+  const dataSourceError = [referenceError, activityError].filter(Boolean).join(' ');
   const referenceStatusLabel = referenceLoading
     ? 'Loading Supabase reference data'
-    : dataModeLabel;
+    : activityLoading
+      ? 'Loading Supabase statements & transactions'
+      : dataModeLabel;
 
   return (
     <Routes>
@@ -266,16 +421,16 @@ export function App() {
                 void auth.signOut();
               }}
               dataModeLabel={referenceStatusLabel}
-              dataSourceError={referenceError}
+              dataSourceError={dataSourceError}
             />
           )
         }
       >
-        <Route index element={<DashboardPage dealers={activeDealers} statements={statements} transactions={transactions} allocations={dealerPaymentAllocations} role={role} employee={{ ...employee, assignments: visibleEmployeeAssignments }} employeeCommissions={role === 'employee' ? employeeVisibleCommissions : employeeCommissions} employeePaymentAllocations={employeePaymentAllocations} dealerPayments={dealerPayments} employeePayments={employeePayments} />} />
-        <Route path="dealers" element={<DealersPage dealers={activeDealers} statements={statements} transactions={transactions} allocations={dealerPaymentAllocations} storeIds={role === 'employee' ? assignedStoreIds : undefined} />} />
-        <Route path="dealers/:dealerId" element={<DealerProfilePage role={role} assignedStoreIds={assignedStoreIds} addTransactionStoreIds={addTransactionStoreIds} dealers={activeDealers} statements={statements} transactions={transactions} setStatements={setStatements} setFlash={setFlash} payments={dealerPayments} allocations={dealerPaymentAllocations} setPayments={setDealerPayments} setAllocations={setDealerPaymentAllocations} employees={employeesWithAssignments} employeeCommissions={employeeCommissions} setEmployeeCommissions={setEmployeeCommissions} />} />
-        <Route path="statements/:statementId" element={<StatementDetailPage role={role} assignedStoreIds={assignedStoreIds} addTransactionStoreIds={addTransactionStoreIds} dealers={activeDealers} statements={statements} transactions={transactions} setTransactions={setTransactions} setFlash={setFlash} allocations={dealerPaymentAllocations} employees={employeesWithAssignments} />} />
-        <Route path="transactions" element={role === 'admin' ? <TransactionsPage role={role} assignedStoreIds={assignedStoreIds} dealers={activeDealers} transactions={transactions} setTransactions={setTransactions} setFlash={setFlash} /> : <Navigate to="/" replace />} />
+        <Route index element={<DashboardPage dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} allocations={dealerPaymentAllocations} role={role} employee={{ ...employee, assignments: visibleEmployeeAssignments }} employeeCommissions={role === 'employee' ? employeeVisibleCommissions : employeeCommissions} employeePaymentAllocations={employeePaymentAllocations} dealerPayments={dealerPayments} employeePayments={employeePayments} />} />
+        <Route path="dealers" element={<DealersPage dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} allocations={dealerPaymentAllocations} storeIds={role === 'employee' ? assignedStoreIds : undefined} />} />
+        <Route path="dealers/:dealerId" element={<DealerProfilePage role={role} assignedStoreIds={assignedStoreIds} addTransactionStoreIds={addTransactionStoreIds} dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} setStatements={setActiveStatements} setFlash={setFlash} payments={dealerPayments} allocations={dealerPaymentAllocations} setPayments={setDealerPayments} setAllocations={setDealerPaymentAllocations} employees={employeesWithAssignments} employeeCommissions={employeeCommissions} setEmployeeCommissions={setEmployeeCommissions} onCreateStatement={usingSupabaseActivityData ? handleCreateStatement : undefined} onUpdateStatementStatus={usingSupabaseActivityData ? handleUpdateStatementStatus : undefined} />} />
+        <Route path="statements/:statementId" element={<StatementDetailPage role={role} assignedStoreIds={assignedStoreIds} addTransactionStoreIds={addTransactionStoreIds} dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} setTransactions={setActiveTransactions} setFlash={setFlash} allocations={dealerPaymentAllocations} employees={employeesWithAssignments} onCreateTransaction={usingSupabaseActivityData ? handleCreateTransaction : undefined} />} />
+        <Route path="transactions" element={role === 'admin' ? <TransactionsPage role={role} assignedStoreIds={assignedStoreIds} dealers={activeDealers} transactions={activeTransactions} setTransactions={setActiveTransactions} setFlash={setFlash} onUpdateTransactionStatus={usingSupabaseActivityData ? handleTransactionStatus : undefined} /> : <Navigate to="/" replace />} />
         <Route path="employees" element={role === 'admin' ? <EmployeesPage employees={employeesWithAssignments} dealers={activeDealers} commissions={employeeCommissions} allocations={employeePaymentAllocations} /> : <Navigate to="/" replace />} />
         <Route path="employees/:employeeId" element={<EmployeeProfilePage role={role} employees={employeesWithAssignments} dealers={activeDealers} commissions={employeeCommissions} payments={employeePayments} allocations={employeePaymentAllocations} setPayments={setEmployeePayments} setAllocations={setEmployeePaymentAllocations} setCommissions={setEmployeeCommissions} setFlash={setFlash} />} />
         <Route path="assignments" element={role === 'admin' ? <AssignmentsPage employees={employeesWithAssignments} dealers={activeDealers} onUpdateAssignment={updateAssignment} /> : <Navigate to="/" replace />} />

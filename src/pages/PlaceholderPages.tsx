@@ -155,6 +155,8 @@ interface DealerProfilePageProps {
   employees: Employee[];
   employeeCommissions: EmployeeCommission[];
   setEmployeeCommissions: Dispatch<SetStateAction<EmployeeCommission[]>>;
+  onCreateStatement?: (dealer: Dealer, month: string) => Promise<void> | void;
+  onUpdateStatementStatus?: (statement: Statement, status: Statement['status']) => Promise<void> | void;
 }
 
 export function DealerProfilePage({
@@ -172,6 +174,8 @@ export function DealerProfilePage({
   setAllocations,
   employees,
   setEmployeeCommissions,
+  onCreateStatement,
+  onUpdateStatementStatus,
 }: DealerProfilePageProps) {
   const { dealerId } = useParams();
   const dealer = dealers.find((row) => row.id === dealerId);
@@ -209,6 +213,11 @@ export function DealerProfilePage({
   let running = 0;
 
   const createStatement = () => {
+    if (onCreateStatement) {
+      void onCreateStatement(dealer, month);
+      return;
+    }
+
     if (dealerStatements.some((statement) => statement.month === month)) {
       setFlash('Error: duplicate statement month blocked.');
       return;
@@ -324,7 +333,7 @@ export function DealerProfilePage({
 
       {role === 'admin' && (
         <div className="grid gap-5 xl:grid-cols-3">
-          <SectionCard title="New Statement" subtitle="Create a mock monthly statement for this dealer.">
+          <SectionCard title="New Statement" subtitle="Create a monthly statement for this dealer.">
             <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-end">
               <FormLabel label="Statement month">
                 <input
@@ -513,11 +522,15 @@ export function DealerProfilePage({
                         <button
                           className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-indigoBrand hover:bg-indigo-50"
                           onClick={() => {
-                            setStatements((previous) =>
-                              previous.map((row) =>
-                                row.id === statement.id ? { ...row, status: 'closed' } : row,
-                              ),
-                            );
+                            if (onUpdateStatementStatus) {
+                              void onUpdateStatementStatus(statement, 'closed');
+                            } else {
+                              setStatements((previous) =>
+                                previous.map((row) =>
+                                  row.id === statement.id ? { ...row, status: 'closed' } : row,
+                                ),
+                              );
+                            }
                             setEmployeeCommissions((previous) =>
                               generateEmployeeCommissionsForStatement(
                                 statement,
@@ -556,6 +569,19 @@ interface StatementDetailPageProps {
   setFlash: (value: string) => void;
   allocations: DealerPaymentAllocation[];
   employees: Employee[];
+  onCreateTransaction?: (
+    statement: Statement,
+    dealer: Dealer,
+    input: {
+      date: string;
+      type: TransactionType;
+      amount: number;
+      description?: string;
+      orderCode?: string;
+      adjustmentScope?: ManualAdjustmentScope;
+      adjustmentDirection?: ManualAdjustmentDirection;
+    },
+  ) => Promise<void> | void;
 }
 
 export function StatementDetailPage({
@@ -569,6 +595,7 @@ export function StatementDetailPage({
   setFlash,
   allocations,
   employees,
+  onCreateTransaction,
 }: StatementDetailPageProps) {
   const { statementId } = useParams();
   const statement = statements.find((row) => row.id === statementId);
@@ -601,6 +628,22 @@ export function StatementDetailPage({
       return;
     }
 
+    const input = {
+      date: form.date,
+      type: form.type,
+      amount,
+      description: form.description,
+      orderCode: form.orderCode || undefined,
+      adjustmentScope: form.type === 'manual_adjustment' ? form.adjustmentScope : undefined,
+      adjustmentDirection: form.type === 'manual_adjustment' ? form.adjustmentDirection : undefined,
+    };
+
+    if (onCreateTransaction) {
+      void onCreateTransaction(statement, dealer, input);
+      setForm((previous) => ({ ...previous, amount: '', description: '', orderCode: '' }));
+      return;
+    }
+
     const status: TransactionStatus = role === 'admin' ? 'confirmed' : 'pending_review';
     setTransactions((previous) => [
       ...previous,
@@ -608,14 +651,14 @@ export function StatementDetailPage({
         id: `t-${Date.now()}`,
         dealerId: dealer.id,
         statementId: statement.id,
-        date: form.date,
-        type: form.type,
+        date: input.date,
+        type: input.type,
         amount,
         status,
-        description: form.description,
-        orderCode: form.orderCode || undefined,
-        adjustmentScope: form.type === 'manual_adjustment' ? form.adjustmentScope : undefined,
-        adjustmentDirection: form.type === 'manual_adjustment' ? form.adjustmentDirection : undefined,
+        description: input.description,
+        orderCode: input.orderCode,
+        adjustmentScope: input.adjustmentScope,
+        adjustmentDirection: input.adjustmentDirection,
         createdByRole: role,
       },
     ]);
@@ -832,6 +875,7 @@ interface TransactionsPageProps {
   transactions: SettlementTransaction[];
   setTransactions: Dispatch<SetStateAction<SettlementTransaction[]>>;
   setFlash: (value: string) => void;
+  onUpdateTransactionStatus?: (transactionId: string, status: TransactionStatus) => Promise<void> | void;
 }
 
 export function TransactionsPage({
@@ -841,6 +885,7 @@ export function TransactionsPage({
   transactions,
   setTransactions,
   setFlash,
+  onUpdateTransactionStatus,
 }: TransactionsPageProps) {
   const [filters, setFilters] = useState({ dealerId: '', type: '', status: '', q: '' });
   const visibleDealers = role === 'admin' ? dealers : dealers.filter((dealer) => assignedStoreIds.includes(dealer.storeId));
@@ -862,6 +907,11 @@ export function TransactionsPage({
   );
 
   const updateStatus = (transactionId: string, status: TransactionStatus) => {
+    if (onUpdateTransactionStatus) {
+      void onUpdateTransactionStatus(transactionId, status);
+      return;
+    }
+
     setTransactions((previous) =>
       previous.map((transaction) => (transaction.id === transactionId ? { ...transaction, status } : transaction)),
     );
@@ -871,7 +921,7 @@ export function TransactionsPage({
 
   return (
     <PageShell title="Transactions" subtitle="Global transaction management and approval queue">
-      <SectionCard title="Transaction Filters" subtitle="Narrow the approval and ledger views without changing mock data.">
+      <SectionCard title="Transaction Filters" subtitle="Narrow the approval and ledger views without changing source data.">
         <div className="grid gap-3 p-5 md:grid-cols-4">
           <FormLabel label="Dealer">
             <select
