@@ -43,7 +43,7 @@ begin
   if not exists (select 1 from pg_type where typnamespace = 'public'::regnamespace and typname = 'assignment_status') then
     create type public.assignment_status as enum ('active', 'inactive');
   end if;
-end
+end;
 $$;
 
 create or replace function public.set_updated_at()
