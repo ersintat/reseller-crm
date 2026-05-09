@@ -84,16 +84,17 @@ In real auth mode, the app now loads these tables from Supabase:
 - employee store assignments
 - statements
 - transactions
+- dealer payments
+- dealer payment allocations
 
 These areas intentionally remain mock/localStorage-backed:
-- dealer payments and allocations
 - employee commissions, payments, and allocations
-- settlement calculations and approval workflow state
+- settlement calculations
 - assignment edits made in the UI during this milestone
 
-When Supabase activity data is active, the app shows: `Supabase statements & transactions · Local payments & commissions`.
+When Supabase activity data is active, the app shows: `Supabase statements, transactions & dealer payments · Local employee commissions`.
 
-Statement and transaction writes use Supabase in auth mode. Cached statement totals are not authoritative yet; the UI still calculates totals with the existing frontend helpers. Dealer payments, payment allocations, employee commissions, and employee payments will move in later milestones.
+Statement, transaction, dealer payment, and dealer payment allocation writes use Supabase in auth mode. Cached statement `paid_amount` and `remaining_amount` columns are not authoritative yet; the UI still derives paid and remaining amounts from dealer payment allocations with the existing frontend helpers. Employee commissions and employee payments will move in later milestones.
 
 ## Demo persistence
 - The mock app state is persisted to `localStorage` using a versioned key prefix: `dealer-settlement-manager:v1`.

@@ -40,6 +40,7 @@ import {
 import { PageShell } from './Shared';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { Button, DataTable, EmptyState, SectionCard } from '../components/ui/Primitives';
+import type { RecordDealerPaymentInput } from '../lib/settlementActivityService';
 
 const transactionTypes: TransactionType[] = [
   'bank_payout',
@@ -157,6 +158,7 @@ interface DealerProfilePageProps {
   setEmployeeCommissions: Dispatch<SetStateAction<EmployeeCommission[]>>;
   onCreateStatement?: (dealer: Dealer, month: string) => Promise<void> | void;
   onUpdateStatementStatus?: (statement: Statement, status: Statement['status']) => Promise<void> | void;
+  onRecordDealerPayment?: (input: RecordDealerPaymentInput) => Promise<void> | void;
 }
 
 export function DealerProfilePage({
@@ -176,6 +178,7 @@ export function DealerProfilePage({
   setEmployeeCommissions,
   onCreateStatement,
   onUpdateStatementStatus,
+  onRecordDealerPayment,
 }: DealerProfilePageProps) {
   const { dealerId } = useParams();
   const dealer = dealers.find((row) => row.id === dealerId);
@@ -239,7 +242,7 @@ export function DealerProfilePage({
     setFlash('Statement created.');
   };
 
-  const submitPayment = () => {
+  const submitPayment = async () => {
     if (role !== 'admin') return;
 
     const amount = Number(payForm.amount);
@@ -296,6 +299,19 @@ export function DealerProfilePage({
       statementId: row.statementId,
       allocatedAmount: row.allocatedAmount,
     }));
+
+    if (onRecordDealerPayment) {
+      await onRecordDealerPayment({
+        dealer,
+        amount,
+        paymentDate: payForm.paymentDate,
+        description: payForm.description || 'Dealer payment',
+        allocationMode: payForm.mode,
+        allocations: rows,
+        statements,
+      });
+      return;
+    }
 
     setPayments((previous) => [...previous, payment]);
     setAllocations((previous) => [...previous, ...allocationRows]);

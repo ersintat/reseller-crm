@@ -1,8 +1,11 @@
 import { supabase } from './supabaseClient';
 import {
   Dealer,
+  DealerPayment,
+  DealerPaymentAllocation,
   ManualAdjustmentDirection,
   ManualAdjustmentScope,
+  PaymentAllocationMode,
   Role,
   SettlementTransaction,
   Statement,
@@ -37,6 +40,25 @@ interface TransactionRow {
   created_at: string | null;
 }
 
+interface DealerPaymentRow {
+  id: string;
+  dealer_id: string;
+  amount: number | string;
+  currency: 'USD' | string | null;
+  payment_date: string;
+  description: string | null;
+  allocation_mode: PaymentAllocationMode;
+  created_at: string | null;
+}
+
+interface DealerPaymentAllocationRow {
+  id: string;
+  payment_id: string;
+  statement_id: string;
+  allocated_amount: number | string;
+  created_at: string | null;
+}
+
 export interface CreateTransactionInput {
   date: string;
   type: TransactionType;
@@ -45,6 +67,16 @@ export interface CreateTransactionInput {
   orderCode?: string;
   adjustmentScope?: ManualAdjustmentScope;
   adjustmentDirection?: ManualAdjustmentDirection;
+}
+
+export interface RecordDealerPaymentInput {
+  dealer: Dealer;
+  amount: number;
+  paymentDate: string;
+  description?: string;
+  allocationMode: PaymentAllocationMode;
+  allocations: { statementId: string; allocatedAmount: number }[];
+  statements: Statement[];
 }
 
 const toNumber = (value: number | string | null | undefined) => Number(value ?? 0);
@@ -81,6 +113,34 @@ function mapTransaction(row: TransactionRow, dealers: Dealer[]): SettlementTrans
     adjustmentScope: row.adjustment_scope ?? undefined,
     adjustmentDirection: row.adjustment_direction ?? undefined,
     createdByRole: row.created_by_role ?? undefined,
+  };
+}
+
+function mapDealerPayment(row: DealerPaymentRow, dealers: Dealer[]): DealerPayment {
+  const dealer = dealerBySupabaseId(dealers).get(row.dealer_id);
+  return {
+    id: row.id,
+    dealerId: dealer?.id ?? row.dealer_id,
+    amount: toNumber(row.amount),
+    currency: 'USD',
+    paymentDate: row.payment_date,
+    description: row.description ?? 'Dealer payment',
+    allocationMode: row.allocation_mode,
+    createdBy: 'admin',
+    createdAt: row.created_at ?? new Date().toISOString(),
+  };
+}
+
+function mapDealerPaymentAllocation(
+  row: DealerPaymentAllocationRow,
+  statements: Statement[] = [],
+): DealerPaymentAllocation {
+  const statement = statements.find((item) => (item.supabaseId ?? item.id) === row.statement_id);
+  return {
+    id: row.id,
+    paymentId: row.payment_id,
+    statementId: statement?.id ?? row.statement_id,
+    allocatedAmount: toNumber(row.allocated_amount),
   };
 }
 
@@ -219,3 +279,114 @@ export const approveTransaction = (transactionId: string) =>
 
 export const rejectTransaction = (transactionId: string) =>
   updateTransaction(transactionId, { status: 'rejected' });
+
+export async function fetchDealerPayments(dealers: Dealer[]): Promise<DealerPayment[]> {
+  if (!supabase) return [];
+
+  const { data, error } = await supabase
+    .from('dealer_payments')
+    .select('id,dealer_id,amount,currency,payment_date,description,allocation_mode,created_at')
+    .order('payment_date', { ascending: false })
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return ((data ?? []) as DealerPaymentRow[]).map((row) => mapDealerPayment(row, dealers));
+}
+
+export async function fetchDealerPaymentAllocations(
+  statements: Statement[] = [],
+): Promise<DealerPaymentAllocation[]> {
+  if (!supabase) return [];
+
+  const { data, error } = await supabase
+    .from('dealer_payment_allocations')
+    .select('id,payment_id,statement_id,allocated_amount,created_at')
+    .order('created_at', { ascending: true });
+
+  if (error) throw error;
+  return ((data ?? []) as DealerPaymentAllocationRow[]).map((row) =>
+    mapDealerPaymentAllocation(row, statements),
+  );
+}
+
+export async function createDealerPayment({
+  dealer,
+  amount,
+  paymentDate,
+  description,
+  allocationMode,
+}: Omit<RecordDealerPaymentInput, 'allocations' | 'statements'>): Promise<DealerPayment> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const userId = await currentUserId();
+
+  const { data, error } = await supabase
+    .from('dealer_payments')
+    .insert({
+      dealer_id: dealer.supabaseId ?? dealer.id,
+      amount,
+      currency: dealer.currency ?? 'USD',
+      payment_date: paymentDate,
+      description: description || 'Dealer payment',
+      allocation_mode: allocationMode,
+      created_by: userId,
+    })
+    .select('id,dealer_id,amount,currency,payment_date,description,allocation_mode,created_at')
+    .single();
+
+  if (error) throw error;
+  return mapDealerPayment(data as DealerPaymentRow, [dealer]);
+}
+
+export async function createDealerPaymentAllocations({
+  paymentId,
+  allocations,
+  statements,
+}: {
+  paymentId: string;
+  allocations: { statementId: string; allocatedAmount: number }[];
+  statements: Statement[];
+}): Promise<DealerPaymentAllocation[]> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const statementById = new Map(statements.map((statement) => [statement.id, statement]));
+
+  const rows = allocations.map((allocation) => {
+    const statement = statementById.get(allocation.statementId);
+    return {
+      payment_id: paymentId,
+      statement_id: statement?.supabaseId ?? allocation.statementId,
+      allocated_amount: allocation.allocatedAmount,
+    };
+  });
+
+  const { data, error } = await supabase
+    .from('dealer_payment_allocations')
+    .insert(rows)
+    .select('id,payment_id,statement_id,allocated_amount,created_at');
+
+  if (error) throw error;
+  return ((data ?? []) as DealerPaymentAllocationRow[]).map((row) =>
+    mapDealerPaymentAllocation(row, statements),
+  );
+}
+
+export async function recordDealerPaymentWithAllocations(
+  input: RecordDealerPaymentInput,
+): Promise<{ payment: DealerPayment; allocations: DealerPaymentAllocation[] }> {
+  const payment = await createDealerPayment(input);
+  let allocations: DealerPaymentAllocation[] = [];
+
+  try {
+    allocations = await createDealerPaymentAllocations({
+      paymentId: payment.id,
+      allocations: input.allocations,
+      statements: input.statements,
+    });
+  } catch (error) {
+    if (supabase) {
+      await supabase.from('dealer_payments').delete().eq('id', payment.id);
+    }
+    throw error;
+  }
+
+  return { payment, allocations };
+}

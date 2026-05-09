@@ -45,14 +45,23 @@ Milestone 6C added read-only Supabase financial reference data:
 3. Reference-data load failures fall back to the local mock reference data with a non-blocking warning.
 4. Assignment edits in this phase are local overrides only; they are not written back to Supabase.
 
-Milestone 6D adds Supabase-backed statements and transactions in real auth mode:
+Milestone 6D added Supabase-backed statements and transactions in real auth mode:
 
 1. Statements and transactions load from Supabase after login.
 2. Admin statement creation writes to Supabase and relies on the database unique constraint to block duplicate dealer/month/year statements.
 3. Admin-created transactions are inserted as `confirmed`.
 4. Employee-created transactions are inserted as `pending_review`.
 5. Admin approval/rejection updates transaction status in Supabase.
-6. Dealer payments, payment allocations, employee commissions, employee payments, and employee payment allocations remain local/localStorage-backed.
+6. Dealer payments, payment allocations, employee commissions, employee payments, and employee payment allocations remained local/localStorage-backed in 6D.
 7. Statement totals are still calculated in the frontend helper layer. Cached statement total updates are intentionally deferred until an RPC/recalculation milestone.
 
-The next milestone should migrate dealer payments and payment allocations or add database RPCs for authoritative statement recalculation.
+Milestone 6E adds Supabase-backed dealer payments and dealer payment allocations in real auth mode:
+
+1. Dealer payments and dealer payment allocations load from Supabase after login.
+2. Admin Record Dealer Payment writes one `dealer_payments` row plus its `dealer_payment_allocations` rows.
+3. FIFO and manual allocation logic still runs in the frontend using the existing helpers.
+4. Employees cannot create dealer payments because the UI remains admin-only and RLS restricts payment writes to admins.
+5. Statement paid and remaining values are still derived in the UI from allocation rows. Cached statement `paid_amount` and `remaining_amount` updates in Supabase are deferred.
+6. Employee commissions, employee payments, and employee payment allocations remain local/localStorage-backed.
+
+The next milestone should migrate employee commissions/payments or add database RPCs for authoritative statement recalculation and payment allocation transactions.
