@@ -40,7 +40,7 @@ import {
 import { PageShell } from './Shared';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { Button, DataTable, EmptyState, SectionCard } from '../components/ui/Primitives';
-import type { RecordDealerPaymentInput } from '../lib/settlementActivityService';
+import type { RecordDealerPaymentInput, RecordEmployeePaymentInput } from '../lib/settlementActivityService';
 
 const transactionTypes: TransactionType[] = [
   'bank_payout',
@@ -1152,6 +1152,7 @@ export function EmployeeProfilePage({
   setAllocations,
   setCommissions,
   setFlash,
+  onRecordEmployeePayment,
 }: {
   role: Role;
   employees: Employee[];
@@ -1163,6 +1164,7 @@ export function EmployeeProfilePage({
   setAllocations: Dispatch<SetStateAction<EmployeePaymentAllocation[]>>;
   setCommissions: Dispatch<SetStateAction<EmployeeCommission[]>>;
   setFlash: (value: string) => void;
+  onRecordEmployeePayment?: (input: RecordEmployeePaymentInput) => Promise<void> | void;
 }) {
   const { employeeId } = useParams();
   const [form, setForm] = useState({
@@ -1181,7 +1183,7 @@ export function EmployeeProfilePage({
   const rows = getEmployeeCommissionLedgerRows(employee.id, commissions, payments);
   let running = 0;
 
-  const submit = () => {
+  const submit = async () => {
     const amount = Number(form.amount);
     if (amount <= 0) {
       setFlash('Invalid payment amount.');
@@ -1223,6 +1225,20 @@ export function EmployeeProfilePage({
 
     if (allocationRows.length === 0) {
       setFlash('No open commission balance is available for this payment.');
+      return;
+    }
+
+    if (onRecordEmployeePayment) {
+      await onRecordEmployeePayment({
+        employee,
+        amount,
+        paymentDate: form.paymentDate,
+        description: form.description || 'Commission payment',
+        allocationMode: form.mode,
+        allocations: allocationRows,
+        commissions,
+        existingAllocations: allocations,
+      });
       return;
     }
 

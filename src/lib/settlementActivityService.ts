@@ -3,6 +3,10 @@ import {
   Dealer,
   DealerPayment,
   DealerPaymentAllocation,
+  Employee,
+  EmployeeCommission,
+  EmployeePayment,
+  EmployeePaymentAllocation,
   ManualAdjustmentDirection,
   ManualAdjustmentScope,
   PaymentAllocationMode,
@@ -59,6 +63,45 @@ interface DealerPaymentAllocationRow {
   created_at: string | null;
 }
 
+interface EmployeeCommissionRow {
+  id: string;
+  employee_id: string;
+  dealer_id: string;
+  statement_id: string;
+  period_month: number;
+  period_year: number;
+  company_share_amount: number | string;
+  printing_costs: number | string;
+  shipping_costs: number | string;
+  commission_base_adjustments: number | string;
+  commission_base: number | string;
+  commission_rate: number | string;
+  commission_amount: number | string;
+  paid_amount: number | string;
+  remaining_amount: number | string;
+  status: EmployeeCommission['status'];
+  created_at: string | null;
+}
+
+interface EmployeePaymentRow {
+  id: string;
+  employee_id: string;
+  amount: number | string;
+  currency: 'USD' | string | null;
+  payment_date: string;
+  description: string | null;
+  allocation_mode: PaymentAllocationMode;
+  created_at: string | null;
+}
+
+interface EmployeePaymentAllocationRow {
+  id: string;
+  payment_id: string;
+  commission_id: string;
+  allocated_amount: number | string;
+  created_at: string | null;
+}
+
 export interface CreateTransactionInput {
   date: string;
   type: TransactionType;
@@ -79,10 +122,24 @@ export interface RecordDealerPaymentInput {
   statements: Statement[];
 }
 
+export interface RecordEmployeePaymentInput {
+  employee: Employee;
+  amount: number;
+  paymentDate: string;
+  description?: string;
+  allocationMode: PaymentAllocationMode;
+  allocations: { commissionId: string; allocatedAmount: number }[];
+  commissions: EmployeeCommission[];
+  existingAllocations: EmployeePaymentAllocation[];
+}
+
 const toNumber = (value: number | string | null | undefined) => Number(value ?? 0);
 
 const dealerBySupabaseId = (dealers: Dealer[]) =>
   new Map(dealers.map((dealer) => [dealer.supabaseId ?? dealer.id, dealer]));
+
+const employeeBySupabaseId = (employees: Employee[]) =>
+  new Map(employees.map((employee) => [employee.supabaseId ?? employee.id, employee]));
 
 function mapStatement(row: StatementRow, dealers: Dealer[]): Statement {
   const dealer = dealerBySupabaseId(dealers).get(row.dealer_id);
@@ -140,6 +197,67 @@ function mapDealerPaymentAllocation(
     id: row.id,
     paymentId: row.payment_id,
     statementId: statement?.id ?? row.statement_id,
+    allocatedAmount: toNumber(row.allocated_amount),
+  };
+}
+
+function mapEmployeeCommission(
+  row: EmployeeCommissionRow,
+  employees: Employee[] = [],
+  dealers: Dealer[] = [],
+  statements: Statement[] = [],
+): EmployeeCommission {
+  const employee = employeeBySupabaseId(employees).get(row.employee_id);
+  const dealer = dealerBySupabaseId(dealers).get(row.dealer_id);
+  const statement = statements.find((item) => (item.supabaseId ?? item.id) === row.statement_id);
+  return {
+    id: row.id,
+    supabaseId: row.id,
+    employeeId: employee?.id ?? row.employee_id,
+    dealerId: dealer?.id ?? row.dealer_id,
+    statementId: statement?.id ?? row.statement_id,
+    periodMonth: row.period_month,
+    periodYear: row.period_year,
+    companyShareAmount: toNumber(row.company_share_amount),
+    printingCosts: toNumber(row.printing_costs),
+    shippingCosts: toNumber(row.shipping_costs),
+    commissionBaseAdjustments: toNumber(row.commission_base_adjustments),
+    commissionBase: toNumber(row.commission_base),
+    commissionRate: toNumber(row.commission_rate),
+    commissionAmount: toNumber(row.commission_amount),
+    paidAmount: toNumber(row.paid_amount),
+    remainingAmount: toNumber(row.remaining_amount),
+    status: row.status,
+    createdAt: row.created_at ?? new Date().toISOString(),
+  };
+}
+
+function mapEmployeePayment(row: EmployeePaymentRow, employees: Employee[] = []): EmployeePayment {
+  const employee = employeeBySupabaseId(employees).get(row.employee_id);
+  return {
+    id: row.id,
+    supabaseId: row.id,
+    employeeId: employee?.id ?? row.employee_id,
+    amount: toNumber(row.amount),
+    currency: 'USD',
+    paymentDate: row.payment_date,
+    description: row.description ?? 'Commission payment',
+    allocationMode: row.allocation_mode,
+    createdBy: 'admin',
+    createdAt: row.created_at ?? new Date().toISOString(),
+  };
+}
+
+function mapEmployeePaymentAllocation(
+  row: EmployeePaymentAllocationRow,
+  commissions: EmployeeCommission[] = [],
+): EmployeePaymentAllocation {
+  const commission = commissions.find((item) => (item.supabaseId ?? item.id) === row.commission_id);
+  return {
+    id: row.id,
+    supabaseId: row.id,
+    paymentId: row.payment_id,
+    commissionId: commission?.id ?? row.commission_id,
     allocatedAmount: toNumber(row.allocated_amount),
   };
 }
@@ -389,4 +507,264 @@ export async function recordDealerPaymentWithAllocations(
   }
 
   return { payment, allocations };
+}
+
+const commissionSelect =
+  'id,employee_id,dealer_id,statement_id,period_month,period_year,company_share_amount,printing_costs,shipping_costs,commission_base_adjustments,commission_base,commission_rate,commission_amount,paid_amount,remaining_amount,status,created_at';
+
+export async function fetchEmployeeCommissions({
+  employees,
+  dealers,
+  statements,
+}: {
+  employees: Employee[];
+  dealers: Dealer[];
+  statements: Statement[];
+}): Promise<EmployeeCommission[]> {
+  if (!supabase) return [];
+
+  const { data, error } = await supabase
+    .from('employee_commissions')
+    .select(commissionSelect)
+    .order('period_year', { ascending: false })
+    .order('period_month', { ascending: false });
+
+  if (error) throw error;
+  return ((data ?? []) as EmployeeCommissionRow[]).map((row) =>
+    mapEmployeeCommission(row, employees, dealers, statements),
+  );
+}
+
+export async function createOrUpdateEmployeeCommissions({
+  commissions,
+  employees,
+  dealers,
+  statements,
+}: {
+  commissions: EmployeeCommission[];
+  employees: Employee[];
+  dealers: Dealer[];
+  statements: Statement[];
+}): Promise<EmployeeCommission[]> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  if (commissions.length === 0) return [];
+
+  const employeesById = new Map(employees.map((employee) => [employee.id, employee]));
+  const dealersById = new Map(dealers.map((dealer) => [dealer.id, dealer]));
+  const statementsById = new Map(statements.map((statement) => [statement.id, statement]));
+
+  const rows = commissions
+    .map((commission) => {
+      const employee = employeesById.get(commission.employeeId);
+      const dealer = dealersById.get(commission.dealerId);
+      const statement = statementsById.get(commission.statementId);
+      if (!employee || !dealer || !statement) return null;
+
+      return {
+        employee_id: employee.supabaseId ?? employee.id,
+        dealer_id: dealer.supabaseId ?? dealer.id,
+        statement_id: statement.supabaseId ?? statement.id,
+        period_month: commission.periodMonth,
+        period_year: commission.periodYear,
+        company_share_amount: commission.companyShareAmount,
+        printing_costs: commission.printingCosts,
+        shipping_costs: commission.shippingCosts,
+        commission_base_adjustments: commission.commissionBaseAdjustments,
+        commission_base: commission.commissionBase,
+        commission_rate: commission.commissionRate,
+        commission_amount: commission.commissionAmount,
+        paid_amount: commission.paidAmount,
+        remaining_amount: commission.remainingAmount,
+        status: commission.status,
+      };
+    })
+    .filter((row): row is NonNullable<typeof row> => Boolean(row));
+
+  if (rows.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from('employee_commissions')
+    .upsert(rows, { onConflict: 'employee_id,statement_id' })
+    .select(commissionSelect);
+
+  if (error) throw error;
+  return ((data ?? []) as EmployeeCommissionRow[]).map((row) =>
+    mapEmployeeCommission(row, employees, dealers, statements),
+  );
+}
+
+export async function fetchEmployeePayments(employees: Employee[]): Promise<EmployeePayment[]> {
+  if (!supabase) return [];
+
+  const { data, error } = await supabase
+    .from('employee_payments')
+    .select('id,employee_id,amount,currency,payment_date,description,allocation_mode,created_at')
+    .order('payment_date', { ascending: false })
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return ((data ?? []) as EmployeePaymentRow[]).map((row) => mapEmployeePayment(row, employees));
+}
+
+export async function fetchEmployeePaymentAllocations(
+  commissions: EmployeeCommission[] = [],
+): Promise<EmployeePaymentAllocation[]> {
+  if (!supabase) return [];
+
+  const { data, error } = await supabase
+    .from('employee_payment_allocations')
+    .select('id,payment_id,commission_id,allocated_amount,created_at')
+    .order('created_at', { ascending: true });
+
+  if (error) throw error;
+  return ((data ?? []) as EmployeePaymentAllocationRow[]).map((row) =>
+    mapEmployeePaymentAllocation(row, commissions),
+  );
+}
+
+export async function createEmployeePayment({
+  employee,
+  amount,
+  paymentDate,
+  description,
+  allocationMode,
+}: Omit<RecordEmployeePaymentInput, 'allocations' | 'commissions' | 'existingAllocations'>): Promise<EmployeePayment> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const userId = await currentUserId();
+
+  const { data, error } = await supabase
+    .from('employee_payments')
+    .insert({
+      employee_id: employee.supabaseId ?? employee.id,
+      amount,
+      currency: 'USD',
+      payment_date: paymentDate,
+      description: description || 'Commission payment',
+      allocation_mode: allocationMode,
+      created_by: userId,
+    })
+    .select('id,employee_id,amount,currency,payment_date,description,allocation_mode,created_at')
+    .single();
+
+  if (error) throw error;
+  return mapEmployeePayment(data as EmployeePaymentRow, [employee]);
+}
+
+export async function createEmployeePaymentAllocations({
+  paymentId,
+  allocations,
+  commissions,
+}: {
+  paymentId: string;
+  allocations: { commissionId: string; allocatedAmount: number }[];
+  commissions: EmployeeCommission[];
+}): Promise<EmployeePaymentAllocation[]> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const commissionById = new Map(commissions.map((commission) => [commission.id, commission]));
+
+  const rows = allocations.map((allocation) => {
+    const commission = commissionById.get(allocation.commissionId);
+    return {
+      payment_id: paymentId,
+      commission_id: commission?.supabaseId ?? allocation.commissionId,
+      allocated_amount: allocation.allocatedAmount,
+    };
+  });
+
+  const { data, error } = await supabase
+    .from('employee_payment_allocations')
+    .insert(rows)
+    .select('id,payment_id,commission_id,allocated_amount,created_at');
+
+  if (error) throw error;
+  return ((data ?? []) as EmployeePaymentAllocationRow[]).map((row) =>
+    mapEmployeePaymentAllocation(row, commissions),
+  );
+}
+
+async function updateEmployeeCommissionPaymentStates({
+  commissions,
+  existingAllocations,
+  newAllocations,
+}: {
+  commissions: EmployeeCommission[];
+  existingAllocations: EmployeePaymentAllocation[];
+  newAllocations: EmployeePaymentAllocation[];
+}): Promise<EmployeeCommission[]> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const db = supabase;
+
+  const touchedIds = new Set(newAllocations.map((allocation) => allocation.commissionId));
+  const updates = commissions
+    .filter((commission) => touchedIds.has(commission.id))
+    .map((commission) => {
+      const paidAmount = [...existingAllocations, ...newAllocations]
+        .filter((allocation) => allocation.commissionId === commission.id)
+        .reduce((total, allocation) => total + allocation.allocatedAmount, 0);
+      const remainingAmount = Math.max(commission.commissionAmount - paidAmount, 0);
+      return {
+        commission,
+        id: commission.supabaseId ?? commission.id,
+        paid_amount: paidAmount,
+        remaining_amount: remainingAmount,
+        status: (remainingAmount === 0 ? 'paid' : paidAmount > 0 ? 'partially_paid' : 'open') as EmployeeCommission['status'],
+      };
+    });
+
+  if (updates.length === 0) return [];
+
+  const results = await Promise.all(
+    updates.map((update) =>
+      db
+        .from('employee_commissions')
+        .update({
+          paid_amount: update.paid_amount,
+          remaining_amount: update.remaining_amount,
+          status: update.status,
+        })
+        .eq('id', update.id)
+        .select('id')
+        .single(),
+    ),
+  );
+
+  const error = results.find((result) => result.error)?.error;
+  if (error) throw error;
+
+  return updates.map((update) => ({
+    ...update.commission,
+    paidAmount: update.paid_amount,
+    remainingAmount: update.remaining_amount,
+    status: update.status,
+  }));
+}
+
+export async function recordEmployeePaymentWithAllocations(
+  input: RecordEmployeePaymentInput,
+): Promise<{
+  payment: EmployeePayment;
+  allocations: EmployeePaymentAllocation[];
+  commissions: EmployeeCommission[];
+}> {
+  const payment = await createEmployeePayment(input);
+  let allocations: EmployeePaymentAllocation[] = [];
+
+  try {
+    allocations = await createEmployeePaymentAllocations({
+      paymentId: payment.id,
+      allocations: input.allocations,
+      commissions: input.commissions,
+    });
+    const commissions = await updateEmployeeCommissionPaymentStates({
+      commissions: input.commissions,
+      existingAllocations: input.existingAllocations,
+      newAllocations: allocations,
+    });
+    return { payment, allocations, commissions };
+  } catch (error) {
+    if (supabase) {
+      await supabase.from('employee_payments').delete().eq('id', payment.id);
+    }
+    throw error;
+  }
 }

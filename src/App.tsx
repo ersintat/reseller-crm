@@ -21,13 +21,19 @@ import {
   createTransaction as createSupabaseTransaction,
   fetchDealerPaymentAllocations,
   fetchDealerPayments,
+  fetchEmployeeCommissions,
+  fetchEmployeePaymentAllocations,
+  fetchEmployeePayments,
   fetchStatements,
   fetchTransactions,
+  createOrUpdateEmployeeCommissions,
   recordDealerPaymentWithAllocations,
+  recordEmployeePaymentWithAllocations,
   rejectTransaction,
   updateStatementStatus,
   type CreateTransactionInput,
   type RecordDealerPaymentInput,
+  type RecordEmployeePaymentInput,
 } from './lib/settlementActivityService';
 
 const initialEmployeeCommissions = generateEmployeeCommissionsForStatements(
@@ -61,6 +67,42 @@ const hydrateEmployeesWithAssignments = (
     assignments: (assignmentState[employee.id] || employee.assignments).map(normalizeAssignment),
   }));
 
+const commissionKey = (commission: Pick<EmployeeCommission, 'employeeId' | 'statementId'>) =>
+  `${commission.employeeId}:${commission.statementId}`;
+
+const mergeEmployeeCommissions = (
+  current: EmployeeCommission[],
+  updates: EmployeeCommission[],
+): EmployeeCommission[] => {
+  const updateByKey = new Map(updates.map((commission) => [commissionKey(commission), commission]));
+  const seen = new Set<string>();
+  const merged = current.map((commission) => {
+    const key = commissionKey(commission);
+    const update = updateByKey.get(key);
+    if (!update) return commission;
+    seen.add(key);
+    return update;
+  });
+
+  return [...merged, ...updates.filter((commission) => !seen.has(commissionKey(commission)))];
+};
+
+const commissionNeedsSync = (existing: EmployeeCommission | undefined, next: EmployeeCommission) => {
+  if (!existing) return true;
+  if (['paid', 'partially_paid'].includes(existing.status)) return false;
+  return (
+    existing.companyShareAmount !== next.companyShareAmount ||
+    existing.printingCosts !== next.printingCosts ||
+    existing.shippingCosts !== next.shippingCosts ||
+    existing.commissionBaseAdjustments !== next.commissionBaseAdjustments ||
+    existing.commissionBase !== next.commissionBase ||
+    existing.commissionRate !== next.commissionRate ||
+    existing.commissionAmount !== next.commissionAmount ||
+    existing.remainingAmount !== next.remainingAmount ||
+    existing.status !== next.status
+  );
+};
+
 export function App() {
   const auth = useAuth();
   const [demoRole, setDemoRole] = useState<Role>(() => loadFromStorage<Role>('role', 'admin'));
@@ -85,10 +127,15 @@ export function App() {
   const [supabaseTransactions, setSupabaseTransactions] = useState<SettlementTransaction[] | null>(null);
   const [supabaseDealerPayments, setSupabaseDealerPayments] = useState<DealerPayment[] | null>(null);
   const [supabaseDealerPaymentAllocations, setSupabaseDealerPaymentAllocations] = useState<DealerPaymentAllocation[] | null>(null);
+  const [supabaseEmployeeCommissions, setSupabaseEmployeeCommissions] = useState<EmployeeCommission[] | null>(null);
+  const [supabaseEmployeePayments, setSupabaseEmployeePayments] = useState<EmployeePayment[] | null>(null);
+  const [supabaseEmployeePaymentAllocations, setSupabaseEmployeePaymentAllocations] = useState<EmployeePaymentAllocation[] | null>(null);
   const [activityLoading, setActivityLoading] = useState(false);
   const [activityError, setActivityError] = useState('');
   const [dealerPaymentLoading, setDealerPaymentLoading] = useState(false);
   const [dealerPaymentError, setDealerPaymentError] = useState('');
+  const [employeeSettlementLoading, setEmployeeSettlementLoading] = useState(false);
+  const [employeeSettlementError, setEmployeeSettlementError] = useState('');
 
   useEffect(() => {
     if (!auth.authEnabled || !auth.user) {
@@ -144,10 +191,15 @@ export function App() {
       setSupabaseTransactions(null);
       setSupabaseDealerPayments(null);
       setSupabaseDealerPaymentAllocations(null);
+      setSupabaseEmployeeCommissions(null);
+      setSupabaseEmployeePayments(null);
+      setSupabaseEmployeePaymentAllocations(null);
       setActivityError('');
       setDealerPaymentError('');
+      setEmployeeSettlementError('');
       setActivityLoading(false);
       setDealerPaymentLoading(false);
+      setEmployeeSettlementLoading(false);
       return;
     }
 
@@ -232,6 +284,65 @@ export function App() {
     () => hydrateEmployeesWithAssignments(baseEmployees, activeAssignmentState),
     [activeAssignmentState, baseEmployees],
   );
+  useEffect(() => {
+    if (!usingSupabaseDealerPaymentData) {
+      setSupabaseEmployeeCommissions(null);
+      setSupabaseEmployeePayments(null);
+      setSupabaseEmployeePaymentAllocations(null);
+      setEmployeeSettlementError('');
+      setEmployeeSettlementLoading(false);
+      return;
+    }
+
+    let active = true;
+    setEmployeeSettlementLoading(true);
+    setEmployeeSettlementError('');
+
+    const loadEmployeeSettlements = async () => {
+      const nextCommissions = await fetchEmployeeCommissions({
+        employees: employeesWithAssignments,
+        dealers: activeDealers,
+        statements: activeStatements,
+      });
+      const [nextPayments, nextAllocations] = await Promise.all([
+        fetchEmployeePayments(employeesWithAssignments),
+        fetchEmployeePaymentAllocations(nextCommissions),
+      ]);
+      return { nextCommissions, nextPayments, nextAllocations };
+    };
+
+    loadEmployeeSettlements()
+      .then(({ nextCommissions, nextPayments, nextAllocations }) => {
+        if (!active) return;
+        setSupabaseEmployeeCommissions(nextCommissions);
+        setSupabaseEmployeePayments(nextPayments);
+        setSupabaseEmployeePaymentAllocations(nextAllocations);
+      })
+      .catch((error) => {
+        if (!active) return;
+        console.warn('Failed to load Supabase employee settlements.', error);
+        setSupabaseEmployeeCommissions([]);
+        setSupabaseEmployeePayments([]);
+        setSupabaseEmployeePaymentAllocations([]);
+        setEmployeeSettlementError('Supabase employee commissions and payments could not be loaded.');
+      })
+      .finally(() => {
+        if (active) setEmployeeSettlementLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [activeDealers, activeStatements, employeesWithAssignments, usingSupabaseDealerPaymentData]);
+
+  const usingSupabaseEmployeeSettlementData = usingSupabaseDealerPaymentData;
+  const activeEmployeeCommissions = usingSupabaseEmployeeSettlementData
+    ? supabaseEmployeeCommissions ?? []
+    : employeeCommissions;
+  const activeEmployeePayments = usingSupabaseEmployeeSettlementData ? supabaseEmployeePayments ?? [] : employeePayments;
+  const activeEmployeePaymentAllocations = usingSupabaseEmployeeSettlementData
+    ? supabaseEmployeePaymentAllocations ?? []
+    : employeePaymentAllocations;
   const employee =
     employeesWithAssignments[0] ??
     (usingSupabaseReferenceData
@@ -264,11 +375,11 @@ export function App() {
   );
   const employeeVisibleCommissions = useMemo(
     () =>
-      employeeCommissions.filter((commission) => {
+      activeEmployeeCommissions.filter((commission) => {
         const dealer = activeDealers.find((row) => row.id === commission.dealerId);
         return dealer ? commissionStoreIds.includes(dealer.storeId) : false;
       }),
-    [activeDealers, commissionStoreIds, employeeCommissions],
+    [activeDealers, activeEmployeeCommissions, commissionStoreIds],
   );
   const role: Role = auth.authEnabled ? (auth.isAdmin ? 'admin' : 'employee') : demoRole;
   const roleLabel = auth.authEnabled
@@ -287,6 +398,8 @@ export function App() {
   useEffect(() => { saveToStorage('employeePaymentAllocations', employeePaymentAllocations); }, [employeePaymentAllocations]);
   useEffect(() => { saveToStorage('employeeAssignments', employeeAssignments); }, [employeeAssignments]);
   useEffect(() => {
+    if (usingSupabaseEmployeeSettlementData) return;
+
     setEmployeeCommissions((existing) => {
       const generated = generateEmployeeCommissionsForStatements(
         activeStatements,
@@ -297,7 +410,62 @@ export function App() {
       const existingIds = new Set(existing.map((commission) => commission.id));
       return [...existing, ...generated.filter((commission) => !existingIds.has(commission.id))];
     });
-  }, [activeDealers, activeStatements, activeTransactions, employeesWithAssignments]);
+  }, [activeDealers, activeStatements, activeTransactions, employeesWithAssignments, usingSupabaseEmployeeSettlementData]);
+
+  useEffect(() => {
+    if (
+      !usingSupabaseEmployeeSettlementData ||
+      !auth.isAdmin ||
+      employeeSettlementLoading ||
+      supabaseEmployeeCommissions === null
+    ) {
+      return;
+    }
+
+    const generated = generateEmployeeCommissionsForStatements(
+      activeStatements,
+      activeDealers,
+      employeesWithAssignments,
+      activeTransactions,
+      supabaseEmployeeCommissions,
+    );
+    const existingByKey = new Map(supabaseEmployeeCommissions.map((commission) => [commissionKey(commission), commission]));
+    const commissionsToSync = generated.filter((commission) =>
+      commissionNeedsSync(existingByKey.get(commissionKey(commission)), commission),
+    );
+
+    if (commissionsToSync.length === 0) return;
+
+    let active = true;
+    createOrUpdateEmployeeCommissions({
+      commissions: commissionsToSync,
+      employees: employeesWithAssignments,
+      dealers: activeDealers,
+      statements: activeStatements,
+    })
+      .then((synced) => {
+        if (!active) return;
+        setSupabaseEmployeeCommissions((previous) => mergeEmployeeCommissions(previous ?? [], synced));
+      })
+      .catch((error) => {
+        if (!active) return;
+        console.warn('Failed to sync Supabase employee commissions.', error);
+        setEmployeeSettlementError(friendlySupabaseError(error, 'Employee commissions could not be generated'));
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [
+    activeDealers,
+    activeStatements,
+    activeTransactions,
+    auth.isAdmin,
+    employeeSettlementLoading,
+    employeesWithAssignments,
+    supabaseEmployeeCommissions,
+    usingSupabaseEmployeeSettlementData,
+  ]);
 
   const setActiveStatements = (value: SetStateAction<Statement[]>) => {
     if (usingSupabaseActivityData) {
@@ -407,6 +575,25 @@ export function App() {
     }
   };
 
+  const handleRecordEmployeePayment = async (input: RecordEmployeePaymentInput) => {
+    if (!usingSupabaseEmployeeSettlementData) return;
+
+    try {
+      const recorded = await recordEmployeePaymentWithAllocations(input);
+      setSupabaseEmployeePayments((previous) => [recorded.payment, ...(previous ?? [])]);
+      setSupabaseEmployeePaymentAllocations((previous) => [
+        ...(previous ?? []),
+        ...recorded.allocations,
+      ]);
+      setSupabaseEmployeeCommissions((previous) =>
+        mergeEmployeeCommissions(previous ?? [], recorded.commissions),
+      );
+      setFlash('Employee payment recorded and allocated in Supabase.');
+    } catch (error) {
+      setFlash(friendlySupabaseError(error, 'Employee payment could not be recorded'));
+    }
+  };
+
   const updateAssignment = (employeeId: string, nextAssignment: Assignment) => {
     const updateState = (previous: EmployeeAssignmentState | null): EmployeeAssignmentState => {
       const currentState = previous ?? {};
@@ -454,18 +641,22 @@ export function App() {
 
   const dataModeLabel = usingSupabaseReferenceData
     ? usingSupabaseActivityData
-      ? 'Supabase statements, transactions & dealer payments · Local employee commissions'
+      ? 'Supabase settlement & commissions · Local assignment edits'
       : 'Supabase reference data · Local settlement activity'
     : auth.authEnabled
       ? 'Mock reference data · Local settlement activity'
       : 'Demo mode · Local settlement activity';
-  const dataSourceError = [referenceError, activityError, dealerPaymentError].filter(Boolean).join(' ');
+  const dataSourceError = [referenceError, activityError, dealerPaymentError, employeeSettlementError]
+    .filter(Boolean)
+    .join(' ');
   const referenceStatusLabel = referenceLoading
     ? 'Loading Supabase reference data'
     : activityLoading
       ? 'Loading Supabase statements & transactions'
       : dealerPaymentLoading
         ? 'Loading Supabase dealer payments'
+        : employeeSettlementLoading
+          ? 'Loading Supabase employee commissions'
       : dataModeLabel;
 
   return (
@@ -499,16 +690,16 @@ export function App() {
           )
         }
       >
-        <Route index element={<DashboardPage dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} allocations={activeDealerPaymentAllocations} role={role} employee={{ ...employee, assignments: visibleEmployeeAssignments }} employeeCommissions={role === 'employee' ? employeeVisibleCommissions : employeeCommissions} employeePaymentAllocations={employeePaymentAllocations} dealerPayments={activeDealerPayments} employeePayments={employeePayments} />} />
+        <Route index element={<DashboardPage dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} allocations={activeDealerPaymentAllocations} role={role} employee={{ ...employee, assignments: visibleEmployeeAssignments }} employeeCommissions={role === 'employee' ? employeeVisibleCommissions : activeEmployeeCommissions} employeePaymentAllocations={activeEmployeePaymentAllocations} dealerPayments={activeDealerPayments} employeePayments={activeEmployeePayments} />} />
         <Route path="dealers" element={<DealersPage dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} allocations={activeDealerPaymentAllocations} storeIds={role === 'employee' ? assignedStoreIds : undefined} />} />
-        <Route path="dealers/:dealerId" element={<DealerProfilePage role={role} assignedStoreIds={assignedStoreIds} addTransactionStoreIds={addTransactionStoreIds} dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} setStatements={setActiveStatements} setFlash={setFlash} payments={activeDealerPayments} allocations={activeDealerPaymentAllocations} setPayments={setDealerPayments} setAllocations={setDealerPaymentAllocations} employees={employeesWithAssignments} employeeCommissions={employeeCommissions} setEmployeeCommissions={setEmployeeCommissions} onCreateStatement={usingSupabaseActivityData ? handleCreateStatement : undefined} onUpdateStatementStatus={usingSupabaseActivityData ? handleUpdateStatementStatus : undefined} onRecordDealerPayment={usingSupabaseDealerPaymentData ? handleRecordDealerPayment : undefined} />} />
+        <Route path="dealers/:dealerId" element={<DealerProfilePage role={role} assignedStoreIds={assignedStoreIds} addTransactionStoreIds={addTransactionStoreIds} dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} setStatements={setActiveStatements} setFlash={setFlash} payments={activeDealerPayments} allocations={activeDealerPaymentAllocations} setPayments={setDealerPayments} setAllocations={setDealerPaymentAllocations} employees={employeesWithAssignments} employeeCommissions={activeEmployeeCommissions} setEmployeeCommissions={setEmployeeCommissions} onCreateStatement={usingSupabaseActivityData ? handleCreateStatement : undefined} onUpdateStatementStatus={usingSupabaseActivityData ? handleUpdateStatementStatus : undefined} onRecordDealerPayment={usingSupabaseDealerPaymentData ? handleRecordDealerPayment : undefined} />} />
         <Route path="statements/:statementId" element={<StatementDetailPage role={role} assignedStoreIds={assignedStoreIds} addTransactionStoreIds={addTransactionStoreIds} dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} setTransactions={setActiveTransactions} setFlash={setFlash} allocations={activeDealerPaymentAllocations} employees={employeesWithAssignments} onCreateTransaction={usingSupabaseActivityData ? handleCreateTransaction : undefined} />} />
         <Route path="transactions" element={role === 'admin' ? <TransactionsPage role={role} assignedStoreIds={assignedStoreIds} dealers={activeDealers} transactions={activeTransactions} setTransactions={setActiveTransactions} setFlash={setFlash} onUpdateTransactionStatus={usingSupabaseActivityData ? handleTransactionStatus : undefined} /> : <Navigate to="/" replace />} />
-        <Route path="employees" element={role === 'admin' ? <EmployeesPage employees={employeesWithAssignments} dealers={activeDealers} commissions={employeeCommissions} allocations={employeePaymentAllocations} /> : <Navigate to="/" replace />} />
-        <Route path="employees/:employeeId" element={<EmployeeProfilePage role={role} employees={employeesWithAssignments} dealers={activeDealers} commissions={employeeCommissions} payments={employeePayments} allocations={employeePaymentAllocations} setPayments={setEmployeePayments} setAllocations={setEmployeePaymentAllocations} setCommissions={setEmployeeCommissions} setFlash={setFlash} />} />
+        <Route path="employees" element={role === 'admin' ? <EmployeesPage employees={employeesWithAssignments} dealers={activeDealers} commissions={activeEmployeeCommissions} allocations={activeEmployeePaymentAllocations} /> : <Navigate to="/" replace />} />
+        <Route path="employees/:employeeId" element={<EmployeeProfilePage role={role} employees={employeesWithAssignments} dealers={activeDealers} commissions={activeEmployeeCommissions} payments={activeEmployeePayments} allocations={activeEmployeePaymentAllocations} setPayments={setEmployeePayments} setAllocations={setEmployeePaymentAllocations} setCommissions={setEmployeeCommissions} setFlash={setFlash} onRecordEmployeePayment={usingSupabaseEmployeeSettlementData ? handleRecordEmployeePayment : undefined} />} />
         <Route path="assignments" element={role === 'admin' ? <AssignmentsPage employees={employeesWithAssignments} dealers={activeDealers} onUpdateAssignment={updateAssignment} /> : <Navigate to="/" replace />} />
         <Route path="settings" element={role === 'admin' ? <SettingsPage onResetDemoData={resetDemoData} /> : <Navigate to="/" replace />} />
-        <Route path="my-commissions" element={<MyCommissionsPage role={role} employee={employee} dealers={activeDealers} commissions={role === 'employee' ? employeeVisibleCommissions : employeeCommissions} payments={employeePayments} allocations={employeePaymentAllocations} />} />
+        <Route path="my-commissions" element={<MyCommissionsPage role={role} employee={employee} dealers={activeDealers} commissions={role === 'employee' ? employeeVisibleCommissions : activeEmployeeCommissions} payments={activeEmployeePayments} allocations={activeEmployeePaymentAllocations} />} />
       </Route>
     </Routes>
   );

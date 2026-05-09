@@ -19,6 +19,10 @@ Milestone 6B adds the financial database foundation only. The React app still us
     - Graphic Designer -> Venture Invitations at 1.5%
     - Graphic Designer -> Nueva Invitations at 3%
 
+- `supabase/migrations/202605090004_employee_payment_select_policies.sql`
+  - Adds employee select policies for their own employee payment rows.
+  - Adds employee select policies for employee payment allocations tied to their own visible commission rows.
+
 ## Implemented
 
 - Schema and RLS foundation for future Supabase-backed financial data.
@@ -55,13 +59,23 @@ Milestone 6D added Supabase-backed statements and transactions in real auth mode
 6. Dealer payments, payment allocations, employee commissions, employee payments, and employee payment allocations remained local/localStorage-backed in 6D.
 7. Statement totals are still calculated in the frontend helper layer. Cached statement total updates are intentionally deferred until an RPC/recalculation milestone.
 
-Milestone 6E adds Supabase-backed dealer payments and dealer payment allocations in real auth mode:
+Milestone 6E added Supabase-backed dealer payments and dealer payment allocations in real auth mode:
 
 1. Dealer payments and dealer payment allocations load from Supabase after login.
 2. Admin Record Dealer Payment writes one `dealer_payments` row plus its `dealer_payment_allocations` rows.
 3. FIFO and manual allocation logic still runs in the frontend using the existing helpers.
 4. Employees cannot create dealer payments because the UI remains admin-only and RLS restricts payment writes to admins.
 5. Statement paid and remaining values are still derived in the UI from allocation rows. Cached statement `paid_amount` and `remaining_amount` updates in Supabase are deferred.
-6. Employee commissions, employee payments, and employee payment allocations remain local/localStorage-backed.
+6. Employee commissions, employee payments, and employee payment allocations remained local/localStorage-backed in 6E.
 
-The next milestone should migrate employee commissions/payments or add database RPCs for authoritative statement recalculation and payment allocation transactions.
+Milestone 6F adds Supabase-backed employee commissions, employee payments, and employee payment allocations in real auth mode:
+
+1. Employee commissions, employee payments, and employee payment allocations load from Supabase after login.
+2. Commission generation still uses the existing frontend helper logic and writes calculated rows with `upsert` on `employee_id + statement_id`.
+3. Existing `paid` and `partially_paid` commission rows are not overwritten by regeneration.
+4. Admin Record Employee Payment writes one `employee_payments` row plus its `employee_payment_allocations` rows.
+5. Employee commission paid/remaining/status cached columns are updated after employee payment allocation. Statement paid/remaining cached columns are still deferred.
+6. Assignment edit persistence remains a local override until a later milestone.
+7. Calculation RPCs/triggers remain deferred; the frontend helper layer remains the source for settlement and commission calculations.
+
+The next milestone should persist assignment edits or add database RPCs for authoritative recalculation and transactional payment allocation.
