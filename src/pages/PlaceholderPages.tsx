@@ -358,8 +358,8 @@ export function DealerProfilePage({
                 <FormLabel label="Amount">
                   <input
                     placeholder="0.00"
-                    type="number"
-                    min="0.01"
+                    type="text"
+                    inputMode="decimal"
                     className="h-10 w-full px-3"
                     value={payForm.amount}
                     onChange={(event) => setPayForm({ ...payForm, amount: event.target.value })}
@@ -408,8 +408,8 @@ export function DealerProfilePage({
                       <span className="font-medium text-slate-900">{open.statement.month}</span>
                       <span className="text-slate-500">Remaining {formatUsd(open.remaining)}</span>
                       <input
-                        type="number"
-                        min="0"
+                        type="text"
+                        inputMode="decimal"
                         placeholder="Allocate"
                         className="h-9 px-3"
                         value={manual[open.statement.id] || ''}
@@ -1236,8 +1236,8 @@ export function EmployeeProfilePage({
             </FormLabel>
             <FormLabel label="Amount">
               <input
-                type="number"
-                min="0.01"
+                type="text"
+                inputMode="decimal"
                 className="h-10 w-full px-3"
                 value={form.amount}
                 onChange={(event) => setForm({ ...form, amount: event.target.value })}
@@ -1282,7 +1282,8 @@ export function EmployeeProfilePage({
                   </span>
                   <span className="text-slate-500">Remaining {formatUsd(open.remaining)}</span>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="decimal"
                     className="h-9 px-3"
                     value={manual[open.commission.id] || ''}
                     onChange={(event) => setManual({ ...manual, [open.commission.id]: event.target.value })}
