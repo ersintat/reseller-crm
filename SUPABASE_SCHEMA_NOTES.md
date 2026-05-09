@@ -87,3 +87,93 @@ Milestone 6G adds Supabase-backed assignment editing in real auth mode:
 5. Permission changes immediately affect employee dealer visibility, transaction form access, and My Commissions visibility through the existing assignment-derived UI state.
 
 The next milestone should add database RPCs for authoritative recalculation and transactional payment allocation.
+
+## Employee Auth + RLS QA Setup
+
+The financial schema already supports linking a real Supabase Auth user to the seeded `Graphic Designer` employee row:
+
+- `public.employees.user_id` references `auth.users(id)`.
+- `public.user_roles` stores the app role used by `AuthProvider`.
+- `public.current_employee_id()` resolves the active employee row by `employees.user_id = auth.uid()` and `user_roles.role = 'employee'`.
+
+Create or invite the employee user in Supabase Auth first, or sign up through `/signup`. Then run this SQL in the Supabase SQL Editor, replacing the email value:
+
+```sql
+-- Link an Auth user to the seeded Graphic Designer employee record.
+with target_user as (
+  select id, email
+  from auth.users
+  where lower(email) = lower('graphic.designer@example.com')
+  limit 1
+),
+target_employee as (
+  select id
+  from public.employees
+  where name = 'Graphic Designer'
+  limit 1
+)
+update public.employees e
+set user_id = target_user.id
+from target_user, target_employee
+where e.id = target_employee.id;
+
+-- Ensure the Auth user has the employee app role.
+with target_user as (
+  select id
+  from auth.users
+  where lower(email) = lower('graphic.designer@example.com')
+  limit 1
+)
+insert into public.user_roles (user_id, role)
+select id, 'employee'::public.user_role
+from target_user
+on conflict (user_id, role) do nothing;
+
+-- Optional safety check: do not leave this test user as admin.
+with target_user as (
+  select id
+  from auth.users
+  where lower(email) = lower('graphic.designer@example.com')
+  limit 1
+)
+delete from public.user_roles
+where user_id in (select id from target_user)
+  and role = 'admin';
+```
+
+Verification query:
+
+```sql
+select
+  e.id as employee_id,
+  e.name,
+  e.email,
+  e.user_id,
+  au.email as auth_email,
+  array_agg(ur.role order by ur.role) as roles
+from public.employees e
+left join auth.users au on au.id = e.user_id
+left join public.user_roles ur on ur.user_id = e.user_id
+where e.name = 'Graphic Designer'
+group by e.id, e.name, e.email, e.user_id, au.email;
+```
+
+Employee session QA checklist:
+
+1. Sign out of the admin session and sign in as the linked employee user.
+2. Confirm sidebar only shows `Dashboard`, `Dealers`, and `My Commissions`.
+3. Confirm `Employees`, `Assignments`, `Settings`, and `Transactions` are not visible.
+4. Confirm Dealers only shows active assigned stores allowed by current permissions. With the current QA state, `World of Wedding Co.` should be visible, `Venture Invitations` should be visible but not allow adding transactions, and `Nueva Invitations` should be hidden while inactive. Astra, LA Invitations, Emirates and Weddings, and Invitations Club should be hidden.
+5. Open World of Wedding Co. and confirm Add Transaction is visible when `can_add_transactions = true`.
+6. Open Venture Invitations and confirm Add Transaction is hidden when `can_add_transactions = false`.
+7. Temporarily set `can_view_transactions = false` for a store as admin, then sign in as employee and confirm the dealer/statement detail route redirects away.
+8. Temporarily set `can_view_commission = false` for a store as admin, then sign in as employee and confirm related rows disappear from My Commissions.
+9. Add an employee transaction on an allowed statement and verify in `public.transactions` that `status = 'pending_review'`, `created_by = auth.uid()` for the employee user, and `created_by_role = 'employee'`.
+10. Sign back in as admin, approve or reject the pending transaction, refresh, and confirm the status persists. Only approved `confirmed` transactions should affect totals.
+
+RLS expectations:
+
+- Employees cannot insert dealer payments, employee payments, assignment updates, or admin-only reference rows.
+- Employees can select only their active assigned dealers and related statements/transactions according to assignment permissions.
+- Employees can insert only pending transactions for dealers where `can_add_transactions = true`.
+- Employees can select only their own visible commission/payment rows.
