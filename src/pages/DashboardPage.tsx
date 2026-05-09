@@ -23,6 +23,7 @@ import {
 } from '../lib/statementCalculations';
 import { PageShell } from './Shared';
 import { StatusBadge } from '../components/ui/StatusBadge';
+import { DataTable, EmptyState, KpiCard, PageHeader, SectionCard } from '../components/ui/Primitives';
 
 interface DashboardPageProps {
   dealers: Dealer[];
@@ -35,49 +36,6 @@ interface DashboardPageProps {
   employeePaymentAllocations: EmployeePaymentAllocation[];
   dealerPayments: DealerPayment[];
   employeePayments: EmployeePayment[];
-}
-
-function MetricCard({
-  label,
-  value,
-  helper,
-  context,
-  tone = 'indigo',
-}: {
-  label: string;
-  value: string;
-  helper: string;
-  context?: string;
-  tone?: 'indigo' | 'emerald' | 'amber' | 'slate';
-}) {
-  const toneClass = {
-    indigo: 'bg-indigo-50 text-indigoBrand border-indigo-100',
-    emerald: 'bg-emerald-50 text-emerald-700 border-emerald-100',
-    amber: 'bg-amber-50 text-amber-700 border-amber-100',
-    slate: 'bg-slate-100 text-slate-700 border-slate-200',
-  }[tone];
-
-  return (
-    <div className="bg-white border border-slate-200 rounded-lg p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-        {context && <span className={`text-[11px] px-2 py-1 rounded border ${toneClass}`}>{context}</span>}
-      </div>
-      <p className="text-2xl font-semibold text-slate-950 mt-3">{value}</p>
-      <p className="text-xs text-slate-500 mt-2">{helper}</p>
-    </div>
-  );
-}
-
-function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
-  return (
-    <div className="flex items-end justify-between gap-4 mb-3">
-      <div>
-        <h3 className="text-base font-semibold text-slate-950">{title}</h3>
-        {subtitle && <p className="text-sm text-slate-500 mt-1">{subtitle}</p>}
-      </div>
-    </div>
-  );
 }
 
 export function DashboardPage({
@@ -112,22 +70,22 @@ export function DashboardPage({
     return (
       <PageShell title="Dashboard" subtitle="My commission and review overview">
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-          <MetricCard
+          <KpiCard
             label="My Open Commission Balance"
             value={formatUsd(getEmployeeOpenCommissionBalance(employee.id, employeeCommissions, employeePaymentAllocations))}
             helper="Generated from assigned-store statements."
           />
-          <MetricCard
+          <KpiCard
             label="My Current Month Commission"
             value={formatUsd(getCurrentMonthEmployeeCommission(employee.id, employeeCommissions))}
             helper="Current mock period: April 2026."
           />
-          <MetricCard
+          <KpiCard
             label="Assigned Stores"
             value={String(employee.assignments.length)}
             helper={assignedStoreNames || 'No assigned stores.'}
           />
-          <MetricCard
+          <KpiCard
             label="My Pending Transactions"
             value={String(myPendingTransactions)}
             helper="Pending rows do not affect totals until approved."
@@ -172,11 +130,15 @@ export function DashboardPage({
     const lastPayment = employeePayments
       .filter((payment) => payment.employeeId === row.id)
       .sort((a, b) => b.paymentDate.localeCompare(a.paymentDate))[0];
+    const totalPaid = employeeCommissions
+      .filter((commission) => commission.employeeId === row.id)
+      .reduce((total, commission) => total + commission.paidAmount, 0);
 
     return {
       employee: row,
       openBalance: getEmployeeOpenCommissionBalance(row.id, employeeCommissions, employeePaymentAllocations),
       currentMonthCommission: getCurrentMonthEmployeeCommission(row.id, employeeCommissions),
+      totalPaid,
       lastPayment,
     };
   });
@@ -224,41 +186,39 @@ export function DashboardPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-indigoBrand">Finance Operations</p>
-          <h2 className="text-2xl font-semibold text-slate-950 mt-1">Admin Dashboard</h2>
-          <p className="text-sm text-slate-500 mt-1">
-            Monitor dealer receivables, pending transactions, and employee commissions.
-          </p>
-        </div>
-        <div className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-600 shadow-sm">
-          Current month <span className="font-semibold text-slate-950">{currentMonth}</span>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Finance Operations"
+        title="Admin Dashboard"
+        subtitle="Monitor dealer receivables, pending transactions, and employee commissions."
+        action={
+          <div className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-600 shadow-sm">
+            Current month <span className="font-semibold text-slate-950">{currentMonth}</span>
+          </div>
+        }
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-        <MetricCard
+        <KpiCard
           label="Dealer Open Balance"
           value={formatUsd(totals.openBalance)}
           helper="Unpaid dealer receivables across open statements."
           context={`${dealerRows.filter((row) => row.openBalance > 0).length} active`}
         />
-        <MetricCard
+        <KpiCard
           label="Current Month Dealer Receivables"
           value={formatUsd(totals.currentMonthReceivable)}
           helper="Confirmed transaction totals for the active mock period."
           context={currentMonth}
           tone="slate"
         />
-        <MetricCard
+        <KpiCard
           label="Employee Open Commissions"
           value={formatUsd(employeeOpen)}
           helper="Outstanding commission liability from generated ledgers."
           context={`${employeeRows.length} employee`}
           tone="emerald"
         />
-        <MetricCard
+        <KpiCard
           label="Pending Review Transactions"
           value={String(totals.pendingCount)}
           helper="Employee-submitted transactions awaiting admin decision."
@@ -268,20 +228,17 @@ export function DashboardPage({
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
-        <section className="xl:col-span-2 bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-slate-200">
-            <SectionHeader
-              title="Settlement Overview"
-              subtitle="Dealer-level receivables and payment context from mock statement ledgers."
-            />
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+        <SectionCard
+          className="xl:col-span-2"
+          title="Settlement Overview"
+          subtitle="Dealer-level receivables and payment context from mock statement ledgers."
+        >
+          <DataTable>
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-4 py-3">Dealer / Store</th>
-                  <th className="px-4 py-3">Open Balance</th>
-                  <th className="px-4 py-3">Month Receivable</th>
+                  <th className="px-4 py-3 text-right">Open Balance</th>
+                  <th className="px-4 py-3 text-right">Month Receivable</th>
                   <th className="px-4 py-3">Last Payment</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3" />
@@ -294,12 +251,12 @@ export function DashboardPage({
                       <p className="font-medium text-slate-950">{row.dealer.name}</p>
                       <p className="text-xs text-slate-500">{row.storeName}</p>
                     </td>
-                    <td className="px-4 py-3 font-medium">{formatUsd(row.openBalance)}</td>
-                    <td className="px-4 py-3">{formatUsd(row.currentMonthReceivable)}</td>
+                    <td className="px-4 py-3 font-medium text-right">{formatUsd(row.openBalance)}</td>
+                    <td className="px-4 py-3 text-right">{formatUsd(row.currentMonthReceivable)}</td>
                     <td className="px-4 py-3">
                       {row.lastPayment ? (
                         <>
-                          <p className="font-medium">{formatUsd(row.lastPayment.amount)}</p>
+                          <p className="font-medium text-emerald-700">{formatUsd(row.lastPayment.amount)}</p>
                           <p className="text-xs text-slate-500">{row.lastPayment.paymentDate}</p>
                         </>
                       ) : (
@@ -317,25 +274,20 @@ export function DashboardPage({
                   </tr>
                 ))}
               </tbody>
-            </table>
-          </div>
-        </section>
+          </DataTable>
+        </SectionCard>
 
-        <section className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-slate-200">
-            <SectionHeader title="Action Required" subtitle="Pending review queue." />
-          </div>
+        <SectionCard title="Action Required" subtitle="Pending review queue.">
           {pendingTransactions.length === 0 ? (
-            <div className="p-6 text-sm text-slate-500">No transactions are waiting for review.</div>
+            <EmptyState title="No transactions are waiting for review." />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <DataTable>
                 <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                   <tr>
                     <th className="px-4 py-3">Date</th>
                     <th className="px-4 py-3">Dealer</th>
                     <th className="px-4 py-3">Type</th>
-                    <th className="px-4 py-3">Amount</th>
+                    <th className="px-4 py-3 text-right">Amount</th>
                     <th className="px-4 py-3">Submitted By</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3" />
@@ -349,7 +301,7 @@ export function DashboardPage({
                         <td className="px-4 py-3 text-slate-600">{transaction.date}</td>
                         <td className="px-4 py-3 font-medium text-slate-950">{dealer?.name || 'Unknown dealer'}</td>
                         <td className="px-4 py-3">{transaction.type}</td>
-                        <td className="px-4 py-3 font-medium">{formatUsd(transaction.amount)}</td>
+                        <td className="px-4 py-3 font-medium text-right">{formatUsd(transaction.amount)}</td>
                         <td className="px-4 py-3">{transaction.createdByRole || 'admin'}</td>
                         <td className="px-4 py-3">
                           <StatusBadge status={transaction.status} />
@@ -368,24 +320,20 @@ export function DashboardPage({
                     );
                   })}
                 </tbody>
-              </table>
-            </div>
+            </DataTable>
           )}
-        </section>
+        </SectionCard>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-        <section className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-slate-200">
-            <SectionHeader title="Employee Commission Snapshot" subtitle="Commission exposure by employee ledger." />
-          </div>
-          <table className="w-full text-sm">
+        <SectionCard title="Employee Commission Snapshot" subtitle="Commission exposure by employee ledger.">
+          <DataTable>
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-3">Employee</th>
-                <th className="px-4 py-3">Open Balance</th>
-                <th className="px-4 py-3">Current Month</th>
-                <th className="px-4 py-3">Last Payment</th>
+                <th className="px-4 py-3 text-right">Open Balance</th>
+                <th className="px-4 py-3 text-right">Current Month</th>
+                <th className="px-4 py-3 text-right">Total Paid</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3" />
               </tr>
@@ -397,17 +345,11 @@ export function DashboardPage({
                     <p className="font-medium text-slate-950">{row.employee.name}</p>
                     <p className="text-xs text-slate-500">{row.employee.roleTitle}</p>
                   </td>
-                  <td className="px-4 py-3 font-medium">{formatUsd(row.openBalance)}</td>
-                  <td className="px-4 py-3">{formatUsd(row.currentMonthCommission)}</td>
-                  <td className="px-4 py-3">
-                    {row.lastPayment ? (
-                      <>
-                        <p className="font-medium">{formatUsd(row.lastPayment.amount)}</p>
-                        <p className="text-xs text-slate-500">{row.lastPayment.paymentDate}</p>
-                      </>
-                    ) : (
-                      <span className="text-slate-400">No payment</span>
-                    )}
+                  <td className="px-4 py-3 font-medium text-right">{formatUsd(row.openBalance)}</td>
+                  <td className="px-4 py-3 text-right">{formatUsd(row.currentMonthCommission)}</td>
+                  <td className="px-4 py-3 text-right text-emerald-700">
+                    {formatUsd(row.totalPaid)}
+                    {row.lastPayment && <p className="text-xs text-slate-500">{row.lastPayment.paymentDate}</p>}
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge status={row.openBalance > 0 ? 'open' : 'closed'} />
@@ -420,16 +362,13 @@ export function DashboardPage({
                 </tr>
               ))}
             </tbody>
-          </table>
-        </section>
+          </DataTable>
+        </SectionCard>
 
-        <section className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-slate-200">
-            <SectionHeader title="Recent Activity" subtitle="Latest statements, payments, and transaction events." />
-          </div>
+        <SectionCard title="Recent Activity" subtitle="Latest statements, payments, and transaction events.">
           <div className="divide-y divide-slate-100">
             {recentActivity.length === 0 ? (
-              <div className="p-6 text-sm text-slate-500">No recent activity to display.</div>
+              <EmptyState title="No recent activity to display." />
             ) : (
               recentActivity.map((activity, index) => (
                 <Link
@@ -453,7 +392,7 @@ export function DashboardPage({
               ))
             )}
           </div>
-        </section>
+        </SectionCard>
       </div>
     </div>
   );
