@@ -7,3 +7,19 @@
   background: #f8fafc;
   font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
 }
+
+@layer base {
+  input,
+  select,
+  textarea {
+    @apply rounded-lg border-slate-300 bg-white text-sm shadow-sm transition focus:border-indigoBrand focus:outline-none focus:ring-2 focus:ring-indigo-100;
+  }
+
+  button,
+  a,
+  input,
+  select,
+  textarea {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 focus-visible:ring-offset-2;
+  }
+}

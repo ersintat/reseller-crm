@@ -191,8 +191,9 @@ export function DashboardPage({
         title="Admin Dashboard"
         subtitle="Monitor dealer receivables, pending transactions, and employee commissions."
         action={
-          <div className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-600 shadow-sm">
-            Current month <span className="font-semibold text-slate-950">{currentMonth}</span>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 ring-1 ring-white">
+            <span className="text-xs font-medium uppercase tracking-wide text-slate-400">Current month</span>
+            <p className="font-semibold text-slate-950">{currentMonth}</p>
           </div>
         }
       />
@@ -227,6 +228,25 @@ export function DashboardPage({
         />
       </div>
 
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Confirmed transactions</p>
+          <p className="mt-1 text-lg font-semibold text-slate-950">
+            {transactions.filter((transaction) => transaction.status === 'confirmed').length}
+          </p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Open statements</p>
+          <p className="mt-1 text-lg font-semibold text-slate-950">
+            {statements.filter((statement) => !['closed'].includes(statement.status)).length}
+          </p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Tracked dealers</p>
+          <p className="mt-1 text-lg font-semibold text-slate-950">{dealers.length}</p>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
         <SectionCard
           className="xl:col-span-2"
@@ -234,7 +254,7 @@ export function DashboardPage({
           subtitle="Dealer-level receivables and payment context from mock statement ledgers."
         >
           <DataTable>
-              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-4 py-3">Dealer / Store</th>
                   <th className="px-4 py-3 text-right">Open Balance</th>
@@ -246,7 +266,7 @@ export function DashboardPage({
               </thead>
               <tbody>
                 {dealerRows.map((row) => (
-                  <tr key={row.dealer.id} className="border-t border-slate-100">
+                  <tr key={row.dealer.id} className="border-t border-slate-100 transition hover:bg-slate-50/80">
                     <td className="px-4 py-3">
                       <p className="font-medium text-slate-950">{row.dealer.name}</p>
                       <p className="text-xs text-slate-500">{row.storeName}</p>
@@ -267,7 +287,7 @@ export function DashboardPage({
                       <StatusBadge status={row.dealer.status} />
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <Link className="text-indigoBrand font-medium" to={`/dealers/${row.dealer.id}`}>
+                      <Link className="rounded-lg px-2.5 py-1.5 text-indigoBrand font-medium hover:bg-indigo-50" to={`/dealers/${row.dealer.id}`}>
                         View
                       </Link>
                     </td>
@@ -277,12 +297,12 @@ export function DashboardPage({
           </DataTable>
         </SectionCard>
 
-        <SectionCard title="Action Required" subtitle="Pending review queue.">
+        <SectionCard className="border-amber-200 shadow-amber-50" title="Action Required" subtitle="Pending review queue.">
           {pendingTransactions.length === 0 ? (
             <EmptyState title="No transactions are waiting for review." />
           ) : (
             <DataTable>
-                <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                <thead className="bg-amber-50/70 text-left text-xs uppercase tracking-wide text-slate-500">
                   <tr>
                     <th className="px-4 py-3">Date</th>
                     <th className="px-4 py-3">Dealer</th>
@@ -297,7 +317,7 @@ export function DashboardPage({
                   {pendingTransactions.slice(0, 6).map((transaction) => {
                     const dealer = dealers.find((row) => row.id === transaction.dealerId);
                     return (
-                      <tr key={transaction.id} className="border-t border-slate-100">
+                      <tr key={transaction.id} className="border-t border-slate-100 transition hover:bg-amber-50/40">
                         <td className="px-4 py-3 text-slate-600">{transaction.date}</td>
                         <td className="px-4 py-3 font-medium text-slate-950">{dealer?.name || 'Unknown dealer'}</td>
                         <td className="px-4 py-3">{transaction.type}</td>
@@ -308,10 +328,10 @@ export function DashboardPage({
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex gap-3">
-                            <Link className="text-indigoBrand font-medium" to={`/statements/${transaction.statementId}`}>
+                            <Link className="rounded-lg px-2.5 py-1.5 text-indigoBrand font-medium hover:bg-indigo-50" to={`/statements/${transaction.statementId}`}>
                               View
                             </Link>
-                            <Link className="text-indigoBrand font-medium" to="/transactions">
+                            <Link className="rounded-lg px-2.5 py-1.5 text-indigoBrand font-medium hover:bg-indigo-50" to="/transactions">
                               Review
                             </Link>
                           </div>
@@ -328,7 +348,7 @@ export function DashboardPage({
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
         <SectionCard title="Employee Commission Snapshot" subtitle="Commission exposure by employee ledger.">
           <DataTable>
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-3">Employee</th>
                 <th className="px-4 py-3 text-right">Open Balance</th>
@@ -340,7 +360,7 @@ export function DashboardPage({
             </thead>
             <tbody>
               {employeeRows.map((row) => (
-                <tr key={row.employee.id} className="border-t border-slate-100">
+                <tr key={row.employee.id} className="border-t border-slate-100 transition hover:bg-slate-50/80">
                   <td className="px-4 py-3">
                     <p className="font-medium text-slate-950">{row.employee.name}</p>
                     <p className="text-xs text-slate-500">{row.employee.roleTitle}</p>
@@ -355,7 +375,7 @@ export function DashboardPage({
                     <StatusBadge status={row.openBalance > 0 ? 'open' : 'closed'} />
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <Link className="text-indigoBrand font-medium" to={`/employees/${row.employee.id}`}>
+                    <Link className="rounded-lg px-2.5 py-1.5 text-indigoBrand font-medium hover:bg-indigo-50" to={`/employees/${row.employee.id}`}>
                       View
                     </Link>
                   </td>
@@ -374,13 +394,16 @@ export function DashboardPage({
                 <Link
                   key={`${activity.kind}-${activity.date}-${index}`}
                   to={activity.href}
-                  className="flex items-center justify-between gap-4 p-4 hover:bg-slate-50"
+                  className="flex items-center justify-between gap-4 p-4 transition hover:bg-slate-50"
                 >
-                  <div>
-                    <p className="font-medium text-slate-950">{activity.title}</p>
-                    <p className="text-xs text-slate-500">
-                      {activity.date} · {activity.kind}
-                    </p>
+                  <div className="flex items-center gap-3">
+                    <span className={activity.amount < 0 ? 'h-2.5 w-2.5 rounded-full bg-emerald-500' : activity.status === 'pending_review' ? 'h-2.5 w-2.5 rounded-full bg-amber-500' : 'h-2.5 w-2.5 rounded-full bg-indigoBrand'} />
+                    <div>
+                      <p className="font-medium text-slate-950">{activity.title}</p>
+                      <p className="text-xs text-slate-500">
+                        {activity.date} · {activity.kind}
+                      </p>
+                    </div>
                   </div>
                   <div className="text-right">
                     <p className={activity.amount < 0 ? 'font-semibold text-emerald-700' : 'font-semibold text-slate-950'}>
