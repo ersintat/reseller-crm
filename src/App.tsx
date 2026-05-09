@@ -93,17 +93,50 @@ const mergeEmployeeCommissions = (
 const commissionNeedsSync = (existing: EmployeeCommission | undefined, next: EmployeeCommission) => {
   if (!existing) return true;
   if (['paid', 'partially_paid'].includes(existing.status)) return false;
+  const nextWithExistingRate = prepareCommissionForSync(existing, next);
+
+  // Rate edits apply to future generated rows only. Existing open rows should
+  // update only when the statement calculation base changes.
   return (
     existing.companyShareAmount !== next.companyShareAmount ||
     existing.printingCosts !== next.printingCosts ||
     existing.shippingCosts !== next.shippingCosts ||
     existing.commissionBaseAdjustments !== next.commissionBaseAdjustments ||
     existing.commissionBase !== next.commissionBase ||
-    existing.commissionRate !== next.commissionRate ||
-    existing.commissionAmount !== next.commissionAmount ||
-    existing.remainingAmount !== next.remainingAmount ||
-    existing.status !== next.status
+    Math.abs(existing.commissionAmount - nextWithExistingRate.commissionAmount) > 0.001 ||
+    Math.abs(existing.remainingAmount - nextWithExistingRate.remainingAmount) > 0.001 ||
+    existing.status !== nextWithExistingRate.status
   );
+};
+
+const prepareCommissionForSync = (
+  existing: EmployeeCommission | undefined,
+  next: EmployeeCommission,
+): EmployeeCommission => {
+  if (!existing) return next;
+
+  const commissionAmount = Math.max(next.commissionBase * existing.commissionRate, 0);
+  const remainingAmount = Math.max(commissionAmount - existing.paidAmount, 0);
+  const status =
+    remainingAmount === 0
+      ? commissionAmount > 0
+        ? 'paid'
+        : 'closed'
+      : existing.paidAmount > 0
+        ? 'partially_paid'
+        : 'open';
+
+  return {
+    ...next,
+    id: existing.id,
+    supabaseId: existing.supabaseId,
+    commissionRate: existing.commissionRate,
+    commissionAmount,
+    paidAmount: existing.paidAmount,
+    remainingAmount,
+    status,
+    createdAt: existing.createdAt,
+  };
 };
 
 export function App() {
@@ -433,9 +466,13 @@ export function App() {
       supabaseEmployeeCommissions,
     );
     const existingByKey = new Map(supabaseEmployeeCommissions.map((commission) => [commissionKey(commission), commission]));
-    const commissionsToSync = generated.filter((commission) =>
-      commissionNeedsSync(existingByKey.get(commissionKey(commission)), commission),
-    );
+    const commissionsToSync = generated
+      .filter((commission) =>
+        commissionNeedsSync(existingByKey.get(commissionKey(commission)), commission),
+      )
+      .map((commission) =>
+        prepareCommissionForSync(existingByKey.get(commissionKey(commission)), commission),
+      );
 
     if (commissionsToSync.length === 0) return;
 
