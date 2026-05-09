@@ -8,7 +8,18 @@ export type PaymentAllocationMode = 'fifo' | 'manual';
 export type CommissionStatus = 'open' | 'partially_paid' | 'paid' | 'closed';
 
 export interface Store { id: string; name: string }
-export interface Dealer { id: string; name: string; storeId: string; status: 'active' | 'review' | 'inactive'; dealerSharePercentage: number; companySharePercentage: number }
+export interface Dealer {
+  id: string;
+  name: string;
+  storeId: string;
+  status: 'active' | 'review' | 'inactive';
+  dealerSharePercentage: number;
+  companySharePercentage: number;
+  storeName?: string;
+  platform?: string | null;
+  currency?: string;
+  supabaseId?: string;
+}
 export interface Statement { id: string; dealerId: string; month: string; status: StatementStatus; paidAmount: number; createdAt?: string }
 export interface SettlementTransaction { id: string; dealerId: string; statementId: string; date: string; type: TransactionType; status: TransactionStatus; amount: number; description?: string; orderCode?: string; adjustmentScope?: ManualAdjustmentScope; adjustmentDirection?: ManualAdjustmentDirection; notes?: string; createdByRole?: Role }
 export interface DealerPayment { id: string; dealerId: string; amount: number; currency: 'USD'; paymentDate: string; description: string; allocationMode: PaymentAllocationMode; createdBy: Role; createdAt: string }
@@ -17,5 +28,5 @@ export interface EmployeeCommission { id: string; employeeId: string; dealerId: 
 export interface EmployeePayment { id: string; employeeId: string; amount: number; currency: 'USD'; paymentDate: string; description: string; allocationMode: PaymentAllocationMode; createdBy: Role; createdAt: string }
 export interface EmployeePaymentAllocation { id: string; paymentId: string; commissionId: string; allocatedAmount: number }
 export type AssignmentStatus = 'active' | 'inactive';
-export interface Assignment { storeId: string; commissionRatePct: number; canViewTransactions: boolean; canAddTransactions: boolean; canEditTransactions: boolean; canViewCommission: boolean; status: AssignmentStatus }
-export interface Employee { id: string; name: string; roleTitle: string; assignments: Assignment[] }
+export interface Assignment { storeId: string; commissionRatePct: number; canViewTransactions: boolean; canAddTransactions: boolean; canEditTransactions: boolean; canViewCommission: boolean; status: AssignmentStatus; supabaseId?: string; dealerId?: string }
+export interface Employee { id: string; name: string; roleTitle: string; assignments: Assignment[]; email?: string | null; status?: 'active' | 'inactive'; supabaseId?: string }

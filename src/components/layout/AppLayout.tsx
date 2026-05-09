@@ -21,6 +21,8 @@ export function AppLayout({
   userEmail,
   roleLabel,
   onSignOut,
+  dataModeLabel,
+  dataSourceError,
 }: {
   role: Role;
   setRole: (role: Role) => void;
@@ -30,6 +32,8 @@ export function AppLayout({
   userEmail?: string;
   roleLabel: string;
   onSignOut?: () => void;
+  dataModeLabel: string;
+  dataSourceError?: string;
 }) {
   const initials = (userEmail || 'Demo User')
     .split('@')[0]
@@ -96,7 +100,7 @@ export function AppLayout({
 
           <div className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">
             <p className="font-medium text-slate-700">Financial data mode</p>
-            <p className="mt-1">{authEnabled ? 'Supabase auth, mock ledgers' : 'Demo role switcher, mock ledgers'}</p>
+            <p className="mt-1">{dataModeLabel}</p>
           </div>
         </aside>
 
@@ -111,7 +115,7 @@ export function AppLayout({
                   {authEnabled ? 'Supabase auth connected' : 'Demo mode'}
                 </span>
                 <span className="hidden rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700 ring-1 ring-amber-100 md:inline-flex">
-                  Mock financial data
+                  {dataModeLabel}
                 </span>
               </div>
 
@@ -143,6 +147,11 @@ export function AppLayout({
           </header>
 
           <div className="p-6 lg:p-7">
+            {dataSourceError && (
+              <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 shadow-sm">
+                {dataSourceError}
+              </div>
+            )}
             {flash && (
               <div className="mb-4 flex justify-between rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900 shadow-sm">
                 <span>{flash}</span>

@@ -1370,7 +1370,7 @@ export function AssignmentsPage({
     setEditing({
       employeeId: row.employee.id,
       employeeName: row.employee.name,
-      storeName: row.store?.name || row.dealer?.name || row.assignment.storeId,
+      storeName: row.store?.name || row.dealer?.storeName || row.dealer?.name || row.assignment.storeId,
       assignment: { ...row.assignment },
       rate: String(row.assignment.commissionRatePct),
     });
@@ -1431,7 +1431,7 @@ export function AssignmentsPage({
                   <p className="font-medium text-slate-950">{row.employee.name}</p>
                   <p className="text-xs text-slate-500">{row.employee.roleTitle}</p>
                 </td>
-                <td className="px-4 py-3 font-medium text-slate-900">{row.store?.name || row.dealer?.name || row.assignment.storeId}</td>
+                <td className="px-4 py-3 font-medium text-slate-900">{row.store?.name || row.dealer?.storeName || row.dealer?.name || row.assignment.storeId}</td>
                 <td className="px-4 py-3 text-right font-semibold text-slate-950">{row.assignment.commissionRatePct}%</td>
                 <td className="px-4 py-3"><PermissionBadge enabled={row.assignment.canViewTransactions} /></td>
                 <td className="px-4 py-3"><PermissionBadge enabled={row.assignment.canAddTransactions} /></td>
