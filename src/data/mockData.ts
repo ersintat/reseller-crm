@@ -24,5 +24,24 @@ export const initialTransactions: SettlementTransaction[] = [
   { id: 't10', dealerId: 'd5', statementId: 'st-ai-2026-04', date: '2026-04-02', type: 'bank_payout', status: 'confirmed', amount: 520, notes: 'TODO multi-currency support; currently USD-only', createdByRole: 'admin' },
 ];
 
-export const employees: Employee[] = [{ id: 'e1', name: 'Graphic Designer', roleTitle: 'Graphic Designer', assignments: [{ storeId: 's1', commissionRatePct: 2 }, { storeId: 's2', commissionRatePct: 1.5 }, { storeId: 's3', commissionRatePct: 3 }] }];
+const defaultAssignmentPermissions = {
+  canViewTransactions: true,
+  canAddTransactions: true,
+  canEditTransactions: false,
+  canViewCommission: true,
+  status: 'active' as const,
+};
+
+export const employees: Employee[] = [
+  {
+    id: 'e1',
+    name: 'Graphic Designer',
+    roleTitle: 'Graphic Designer',
+    assignments: [
+      { storeId: 's1', commissionRatePct: 2, ...defaultAssignmentPermissions },
+      { storeId: 's2', commissionRatePct: 1.5, ...defaultAssignmentPermissions },
+      { storeId: 's3', commissionRatePct: 3, ...defaultAssignmentPermissions },
+    ],
+  },
+];
 export const formatUsd = (amount: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);

@@ -33,6 +33,7 @@ export interface CommissionPreview {
 }
 
 const isConfirmed = (transaction: SettlementTransaction) => transaction.status === 'confirmed';
+const isCommissionEligibleAssignment = (assignment: Assignment) => assignment.status === 'active';
 
 const sumConfirmed = (transactions: SettlementTransaction[], type: SettlementTransaction['type']) =>
   transactions
@@ -296,7 +297,9 @@ export function getCommissionPreviewsForStatement(
 ): CommissionPreview[] {
   return employees
     .map((employee) => {
-      const assignment = employee.assignments.find((row) => row.storeId === dealer.storeId);
+      const assignment = employee.assignments.find(
+        (row) => row.storeId === dealer.storeId && isCommissionEligibleAssignment(row),
+      );
       if (!assignment) return null;
       return getCommissionPreviewForStatement(statement, transactions, dealer, employee, assignment);
     })
@@ -354,7 +357,9 @@ export function generateEmployeeCommissionsForStatement(
 
   const output = [...existing];
   for (const employee of employees) {
-    const assignment = employee.assignments.find((row) => row.storeId === dealer.storeId);
+    const assignment = employee.assignments.find(
+      (row) => row.storeId === dealer.storeId && isCommissionEligibleAssignment(row),
+    );
     if (!assignment) continue;
 
     const calculated = calculateEmployeeCommissionForStatement(

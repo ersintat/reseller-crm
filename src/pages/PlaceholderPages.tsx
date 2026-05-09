@@ -1,6 +1,8 @@
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import {
+  Assignment,
+  AssignmentStatus,
   Dealer,
   DealerPayment,
   DealerPaymentAllocation,
@@ -140,6 +142,7 @@ function StatementBreakdown({ statement, dealer, transactions, allocations }: {
 interface DealerProfilePageProps {
   role: Role;
   assignedStoreIds: string[];
+  addTransactionStoreIds: string[];
   dealers: Dealer[];
   statements: Statement[];
   transactions: SettlementTransaction[];
@@ -157,6 +160,7 @@ interface DealerProfilePageProps {
 export function DealerProfilePage({
   role,
   assignedStoreIds,
+  addTransactionStoreIds,
   dealers,
   statements,
   transactions,
@@ -182,6 +186,7 @@ export function DealerProfilePage({
 
   if (!dealer) return <PageShell title="Dealer Profile" subtitle="Dealer not found" />;
   if (role === 'employee' && !assignedStoreIds.includes(dealer.storeId)) return <Navigate to="/dealers" replace />;
+  const canAddDealerTransaction = role === 'admin' || addTransactionStoreIds.includes(dealer.storeId);
 
   const dealerStatements = statements.filter((statement) => statement.dealerId === dealer.id);
   const openStatements = getOpenStatementsForDealer(dealer.id, statements, transactions, dealers, allocations);
@@ -499,7 +504,7 @@ export function DealerProfilePage({
                       <Link className="rounded-lg px-2.5 py-1.5 font-medium text-indigoBrand hover:bg-indigo-50" to={`/statements/${statement.id}`}>
                         View
                       </Link>
-                      {role === 'employee' && (
+                      {role === 'employee' && canAddDealerTransaction && (
                         <Link className="rounded-lg px-2.5 py-1.5 font-medium text-indigoBrand hover:bg-indigo-50" to={`/statements/${statement.id}#add-transaction`}>
                           Add Transaction
                         </Link>
@@ -543,6 +548,7 @@ export function DealerProfilePage({
 interface StatementDetailPageProps {
   role: Role;
   assignedStoreIds: string[];
+  addTransactionStoreIds: string[];
   dealers: Dealer[];
   statements: Statement[];
   transactions: SettlementTransaction[];
@@ -555,6 +561,7 @@ interface StatementDetailPageProps {
 export function StatementDetailPage({
   role,
   assignedStoreIds,
+  addTransactionStoreIds,
   dealers,
   statements,
   transactions,
@@ -579,6 +586,7 @@ export function StatementDetailPage({
   const dealer = dealers.find((row) => row.id === statement.dealerId);
   if (!dealer) return <PageShell title="Statement Detail" subtitle="Dealer not found" />;
   if (role === 'employee' && !assignedStoreIds.includes(dealer.storeId)) return <Navigate to="/dealers" replace />;
+  const canAddTransaction = role === 'admin' || addTransactionStoreIds.includes(dealer.storeId);
 
   const txns = transactions.filter((transaction) => transaction.statementId === statement.id);
   const paid = getEffectiveStatementPaidAmount(statement, allocations);
@@ -619,104 +627,106 @@ export function StatementDetailPage({
     <PageShell title="Statement Detail" subtitle={`${dealer.name} · ${statement.month} financial review`}>
       <StatementBreakdown statement={statement} dealer={dealer} transactions={transactions} allocations={allocations} />
 
-      <SectionCard
-        title="Add Transaction"
-        subtitle={role === 'employee' ? 'Employee submissions enter the review queue.' : 'Admin-created transactions are confirmed immediately.'}
-      >
-        <div id="add-transaction" className="space-y-4 p-5">
-          {role === 'employee' ? (
-            <InfoCallout>Your transaction will be submitted for admin review and will not affect totals until approved.</InfoCallout>
-          ) : (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-              Admin-created transactions are confirmed immediately.
-            </div>
-          )}
-          <div className="grid gap-3 md:grid-cols-4">
-            <FormLabel label="Date">
-              <input
-                type="date"
-                aria-label="Transaction date"
-                value={form.date}
-                onChange={(event) => setForm({ ...form, date: event.target.value })}
-                className="h-10 w-full px-3"
-              />
-            </FormLabel>
-            <FormLabel label="Type">
-              <select
-                aria-label="Transaction type"
-                value={form.type}
-                onChange={(event) => setForm({ ...form, type: event.target.value as TransactionType })}
-                className="h-10 w-full px-3"
-              >
-                {transactionTypes.map((type) => (
-                  <option key={type}>{type}</option>
-                ))}
-              </select>
-            </FormLabel>
-            <FormLabel label="Amount">
-              <input
-                type="text"
-                inputMode="decimal"
-                value={form.amount}
-                onChange={(event) => setForm({ ...form, amount: event.target.value })}
-                className="h-10 w-full px-3"
-                placeholder="0.00"
-              />
-            </FormLabel>
-            <FormLabel label="Description">
-              <input
-                value={form.description}
-                onChange={(event) => setForm({ ...form, description: event.target.value })}
-                className="h-10 w-full px-3"
-                placeholder="Description"
-              />
-            </FormLabel>
-            <FormLabel label="Order code">
-              <input
-                value={form.orderCode}
-                onChange={(event) => setForm({ ...form, orderCode: event.target.value })}
-                className="h-10 w-full px-3"
-                placeholder="Optional"
-              />
-            </FormLabel>
-            {form.type === 'manual_adjustment' && (
-              <>
-                <FormLabel label="Adjustment scope">
-                  <select
-                    aria-label="Manual adjustment scope"
-                    value={form.adjustmentScope}
-                    onChange={(event) =>
-                      setForm({ ...form, adjustmentScope: event.target.value as ManualAdjustmentScope })
-                    }
-                    className="h-10 w-full px-3"
-                  >
-                    {adjustmentScopes.map((scope) => (
-                      <option key={scope}>{scope}</option>
-                    ))}
-                  </select>
-                </FormLabel>
-                <FormLabel label="Direction">
-                  <select
-                    aria-label="Manual adjustment direction"
-                    value={form.adjustmentDirection}
-                    onChange={(event) =>
-                      setForm({ ...form, adjustmentDirection: event.target.value as ManualAdjustmentDirection })
-                    }
-                    className="h-10 w-full px-3"
-                  >
-                    {adjustmentDirections.map((direction) => (
-                      <option key={direction}>{direction}</option>
-                    ))}
-                  </select>
-                </FormLabel>
-              </>
+      {canAddTransaction ? (
+        <SectionCard
+          title="Add Transaction"
+          subtitle={role === 'employee' ? 'Employee submissions enter the review queue.' : 'Admin-created transactions are confirmed immediately.'}
+        >
+          <div id="add-transaction" className="space-y-4 p-5">
+            {role === 'employee' ? (
+              <InfoCallout>Your transaction will be submitted for admin review and will not affect totals until approved.</InfoCallout>
+            ) : (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                Admin-created transactions are confirmed immediately.
+              </div>
             )}
+            <div className="grid gap-3 md:grid-cols-4">
+              <FormLabel label="Date">
+                <input
+                  type="date"
+                  aria-label="Transaction date"
+                  value={form.date}
+                  onChange={(event) => setForm({ ...form, date: event.target.value })}
+                  className="h-10 w-full px-3"
+                />
+              </FormLabel>
+              <FormLabel label="Type">
+                <select
+                  aria-label="Transaction type"
+                  value={form.type}
+                  onChange={(event) => setForm({ ...form, type: event.target.value as TransactionType })}
+                  className="h-10 w-full px-3"
+                >
+                  {transactionTypes.map((type) => (
+                    <option key={type}>{type}</option>
+                  ))}
+                </select>
+              </FormLabel>
+              <FormLabel label="Amount">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={form.amount}
+                  onChange={(event) => setForm({ ...form, amount: event.target.value })}
+                  className="h-10 w-full px-3"
+                  placeholder="0.00"
+                />
+              </FormLabel>
+              <FormLabel label="Description">
+                <input
+                  value={form.description}
+                  onChange={(event) => setForm({ ...form, description: event.target.value })}
+                  className="h-10 w-full px-3"
+                  placeholder="Description"
+                />
+              </FormLabel>
+              <FormLabel label="Order code">
+                <input
+                  value={form.orderCode}
+                  onChange={(event) => setForm({ ...form, orderCode: event.target.value })}
+                  className="h-10 w-full px-3"
+                  placeholder="Optional"
+                />
+              </FormLabel>
+              {form.type === 'manual_adjustment' && (
+                <>
+                  <FormLabel label="Adjustment scope">
+                    <select
+                      aria-label="Manual adjustment scope"
+                      value={form.adjustmentScope}
+                      onChange={(event) =>
+                        setForm({ ...form, adjustmentScope: event.target.value as ManualAdjustmentScope })
+                      }
+                      className="h-10 w-full px-3"
+                    >
+                      {adjustmentScopes.map((scope) => (
+                        <option key={scope}>{scope}</option>
+                      ))}
+                    </select>
+                  </FormLabel>
+                  <FormLabel label="Direction">
+                    <select
+                      aria-label="Manual adjustment direction"
+                      value={form.adjustmentDirection}
+                      onChange={(event) =>
+                        setForm({ ...form, adjustmentDirection: event.target.value as ManualAdjustmentDirection })
+                      }
+                      className="h-10 w-full px-3"
+                    >
+                      {adjustmentDirections.map((direction) => (
+                        <option key={direction}>{direction}</option>
+                      ))}
+                    </select>
+                  </FormLabel>
+                </>
+              )}
+            </div>
+            <Button variant="primary" onClick={addTransaction}>
+              Add Transaction
+            </Button>
           </div>
-          <Button variant="primary" onClick={addTransaction}>
-            Add Transaction
-          </Button>
-        </div>
-      </SectionCard>
+        </SectionCard>
+      ) : null}
 
       <SectionCard title="Transaction Ledger" subtitle="Pending and rejected rows are separated visually from confirmed activity.">
         <DataTable>
@@ -1328,7 +1338,23 @@ export function EmployeeProfilePage({
   );
 }
 
-export function AssignmentsPage({ employees, dealers }: { employees: Employee[]; dealers: Dealer[] }) {
+export function AssignmentsPage({
+  employees,
+  dealers,
+  onUpdateAssignment,
+}: {
+  employees: Employee[];
+  dealers: Dealer[];
+  onUpdateAssignment: (employeeId: string, assignment: Assignment) => void;
+}) {
+  const [editing, setEditing] = useState<null | {
+    employeeId: string;
+    employeeName: string;
+    storeName: string;
+    assignment: Assignment;
+    rate: string;
+  }>(null);
+  const [error, setError] = useState('');
   const rows = employees.flatMap((employee) =>
     employee.assignments.map((assignment) => ({
       employee,
@@ -1338,11 +1364,50 @@ export function AssignmentsPage({ employees, dealers }: { employees: Employee[];
     })),
   );
 
+  const openEditor = (row: (typeof rows)[number]) => {
+    setError('');
+    setEditing({
+      employeeId: row.employee.id,
+      employeeName: row.employee.name,
+      storeName: row.store?.name || row.dealer?.name || row.assignment.storeId,
+      assignment: { ...row.assignment },
+      rate: String(row.assignment.commissionRatePct),
+    });
+  };
+
+  const updateEditingAssignment = (patch: Partial<Assignment>) => {
+    setEditing((current) =>
+      current ? { ...current, assignment: { ...current.assignment, ...patch } } : current,
+    );
+  };
+
+  const saveAssignment = () => {
+    if (!editing) return;
+    const trimmedRate = editing.rate.trim();
+    if (!trimmedRate) {
+      setError('Commission rate is required.');
+      return;
+    }
+
+    const commissionRatePct = Number(trimmedRate);
+    if (!Number.isFinite(commissionRatePct) || commissionRatePct < 0 || commissionRatePct > 100) {
+      setError('Commission rate must be a number between 0 and 100.');
+      return;
+    }
+
+    onUpdateAssignment(editing.employeeId, {
+      ...editing.assignment,
+      commissionRatePct,
+    });
+    setEditing(null);
+    setError('');
+  };
+
   return (
     <PageShell title="Assignments" subtitle="Current mock store access and commission assignments">
       <SectionCard
         title="Assignment Matrix"
-        subtitle="Store access, commission rate, and transaction permissions for the current mock employee assignments."
+        subtitle="Rate changes apply to future generated commissions only; existing commission rows are not regenerated automatically."
       >
         <DataTable>
           <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">
@@ -1354,6 +1419,7 @@ export function AssignmentsPage({ employees, dealers }: { employees: Employee[];
               <th className="px-4 py-3">Add Transactions</th>
               <th className="px-4 py-3">Edit Transactions</th>
               <th className="px-4 py-3">View Commission</th>
+              <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3 text-right">Action</th>
             </tr>
           </thead>
@@ -1366,15 +1432,15 @@ export function AssignmentsPage({ employees, dealers }: { employees: Employee[];
                 </td>
                 <td className="px-4 py-3 font-medium text-slate-900">{row.store?.name || row.dealer?.name || row.assignment.storeId}</td>
                 <td className="px-4 py-3 text-right font-semibold text-slate-950">{row.assignment.commissionRatePct}%</td>
-                <td className="px-4 py-3"><PermissionBadge enabled /></td>
-                <td className="px-4 py-3"><PermissionBadge enabled /></td>
-                <td className="px-4 py-3"><PermissionBadge enabled={false} /></td>
-                <td className="px-4 py-3"><PermissionBadge enabled /></td>
+                <td className="px-4 py-3"><PermissionBadge enabled={row.assignment.canViewTransactions} /></td>
+                <td className="px-4 py-3"><PermissionBadge enabled={row.assignment.canAddTransactions} /></td>
+                <td className="px-4 py-3"><PermissionBadge enabled={row.assignment.canEditTransactions} /></td>
+                <td className="px-4 py-3"><PermissionBadge enabled={row.assignment.canViewCommission} /></td>
+                <td className="px-4 py-3"><StatusBadge status={row.assignment.status} /></td>
                 <td className="px-4 py-3 text-right">
                   <button
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-500 shadow-sm"
-                    disabled
-                    title="Assignment editing is prepared visually but not implemented yet."
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                    onClick={() => openEditor(row)}
                   >
                     Edit
                   </button>
@@ -1384,6 +1450,93 @@ export function AssignmentsPage({ employees, dealers }: { employees: Employee[];
           </tbody>
         </DataTable>
       </SectionCard>
+
+      {editing && (
+        <div className="fixed inset-0 z-30 flex items-center justify-center bg-slate-950/30 px-4 py-6">
+          <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+            <div className="border-b border-slate-200 bg-gradient-to-b from-white to-slate-50 px-5 py-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-indigoBrand">
+                Assignment Management
+              </p>
+              <h3 className="mt-1 text-lg font-semibold text-slate-950">Edit Assignment</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                {editing.employeeName} · {editing.storeName}
+              </p>
+            </div>
+
+            <div className="space-y-5 p-5">
+              {error && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+                  {error}
+                </div>
+              )}
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <FormLabel label="Commission rate">
+                  <input
+                    aria-label="Commission rate"
+                    className="h-10 w-full px-3"
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    value={editing.rate}
+                    onChange={(event) => setEditing({ ...editing, rate: event.target.value })}
+                  />
+                </FormLabel>
+
+                <FormLabel label="Status">
+                  <select
+                    aria-label="Assignment status"
+                    className="h-10 w-full px-3"
+                    value={editing.assignment.status}
+                    onChange={(event) =>
+                      updateEditingAssignment({ status: event.target.value as AssignmentStatus })
+                    }
+                  >
+                    <option value="active">active</option>
+                    <option value="inactive">inactive</option>
+                  </select>
+                </FormLabel>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                {[
+                  ['Can view transactions', 'canViewTransactions'],
+                  ['Can add transactions', 'canAddTransactions'],
+                  ['Can edit transactions', 'canEditTransactions'],
+                  ['Can view commission', 'canViewCommission'],
+                ].map(([label, key]) => (
+                  <label
+                    key={key}
+                    className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700"
+                  >
+                    <span>{label}</span>
+                    <input
+                      aria-label={label}
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-slate-300 text-indigoBrand"
+                      checked={Boolean(editing.assignment[key as keyof Assignment])}
+                      onChange={(event) =>
+                        updateEditingAssignment({ [key]: event.target.checked } as Partial<Assignment>)
+                      }
+                    />
+                  </label>
+                ))}
+              </div>
+
+              <InfoCallout>
+                Commission rate changes affect future generated commission rows only. Existing paid or open commission rows are not recalculated by this edit.
+              </InfoCallout>
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4">
+              <Button onClick={() => setEditing(null)}>Cancel</Button>
+              <Button variant="primary" onClick={saveAssignment}>
+                Save Assignment
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </PageShell>
   );
 }

@@ -16,5 +16,6 @@ export interface DealerPaymentAllocation { id: string; paymentId: string; statem
 export interface EmployeeCommission { id: string; employeeId: string; dealerId: string; statementId: string; periodMonth: number; periodYear: number; companyShareAmount: number; printingCosts: number; shippingCosts: number; commissionBaseAdjustments: number; commissionBase: number; commissionRate: number; commissionAmount: number; paidAmount: number; remainingAmount: number; status: CommissionStatus; createdAt: string }
 export interface EmployeePayment { id: string; employeeId: string; amount: number; currency: 'USD'; paymentDate: string; description: string; allocationMode: PaymentAllocationMode; createdBy: Role; createdAt: string }
 export interface EmployeePaymentAllocation { id: string; paymentId: string; commissionId: string; allocatedAmount: number }
-export interface Assignment { storeId: string; commissionRatePct: number }
+export type AssignmentStatus = 'active' | 'inactive';
+export interface Assignment { storeId: string; commissionRatePct: number; canViewTransactions: boolean; canAddTransactions: boolean; canEditTransactions: boolean; canViewCommission: boolean; status: AssignmentStatus }
 export interface Employee { id: string; name: string; roleTitle: string; assignments: Assignment[] }

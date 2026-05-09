@@ -2,7 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { useEffect, useMemo, useState } from 'react';
 import { AppLayout } from './components/layout/AppLayout';
 import { dealers, employees, initialStatements, initialTransactions } from './data/mockData';
-import { DealerPayment, DealerPaymentAllocation, EmployeeCommission, EmployeePayment, EmployeePaymentAllocation, Role, SettlementTransaction, Statement } from './types';
+import { Assignment, DealerPayment, DealerPaymentAllocation, Employee, EmployeeCommission, EmployeePayment, EmployeePaymentAllocation, Role, SettlementTransaction, Statement } from './types';
 import { DashboardPage } from './pages/DashboardPage';
 import { DealersPage } from './pages/DealersPage';
 import { AssignmentsPage, DealerProfilePage, EmployeeProfilePage, EmployeesPage, MyCommissionsPage, SettingsPage, StatementDetailPage, TransactionsPage } from './pages/PlaceholderPages';
@@ -18,6 +18,32 @@ const initialEmployeeCommissions = generateEmployeeCommissionsForStatements(
   initialTransactions,
 );
 
+type EmployeeAssignmentState = Record<string, Assignment[]>;
+
+const normalizeAssignment = (assignment: Assignment): Assignment => ({
+  storeId: assignment.storeId,
+  commissionRatePct: Number(assignment.commissionRatePct) || 0,
+  canViewTransactions: assignment.canViewTransactions ?? true,
+  canAddTransactions: assignment.canAddTransactions ?? true,
+  canEditTransactions: assignment.canEditTransactions ?? false,
+  canViewCommission: assignment.canViewCommission ?? true,
+  status: assignment.status ?? 'active',
+});
+
+const initialEmployeeAssignments: EmployeeAssignmentState = employees.reduce((output, employee) => {
+  output[employee.id] = employee.assignments.map(normalizeAssignment);
+  return output;
+}, {} as EmployeeAssignmentState);
+
+const hydrateEmployeesWithAssignments = (
+  baseEmployees: Employee[],
+  assignmentState: EmployeeAssignmentState,
+): Employee[] =>
+  baseEmployees.map((employee) => ({
+    ...employee,
+    assignments: (assignmentState[employee.id] || employee.assignments).map(normalizeAssignment),
+  }));
+
 export function App() {
   const auth = useAuth();
   const [demoRole, setDemoRole] = useState<Role>(() => loadFromStorage<Role>('role', 'admin'));
@@ -30,8 +56,47 @@ export function App() {
   const [employeeCommissions, setEmployeeCommissions] = useState<EmployeeCommission[]>(() => loadFromStorage('employeeCommissions', initialEmployeeCommissions));
   const [employeePayments, setEmployeePayments] = useState<EmployeePayment[]>(() => loadFromStorage('employeePayments', []));
   const [employeePaymentAllocations, setEmployeePaymentAllocations] = useState<EmployeePaymentAllocation[]>(() => loadFromStorage('employeePaymentAllocations', []));
-  const employee = employees[0];
-  const assignedStoreIds = useMemo(() => employee.assignments.map((a) => a.storeId), [employee.assignments]);
+  const [employeeAssignments, setEmployeeAssignments] = useState<EmployeeAssignmentState>(() =>
+    loadFromStorage('employeeAssignments', initialEmployeeAssignments),
+  );
+  const employeesWithAssignments = useMemo(
+    () => hydrateEmployeesWithAssignments(employees, employeeAssignments),
+    [employeeAssignments],
+  );
+  const employee = employeesWithAssignments[0];
+  const visibleEmployeeAssignments = useMemo(
+    () =>
+      employee.assignments.filter(
+        (assignment) => assignment.status === 'active' && assignment.canViewTransactions,
+      ),
+    [employee.assignments],
+  );
+  const assignedStoreIds = useMemo(
+    () => visibleEmployeeAssignments.map((assignment) => assignment.storeId),
+    [visibleEmployeeAssignments],
+  );
+  const addTransactionStoreIds = useMemo(
+    () =>
+      employee.assignments
+        .filter((assignment) => assignment.status === 'active' && assignment.canAddTransactions)
+        .map((assignment) => assignment.storeId),
+    [employee.assignments],
+  );
+  const commissionStoreIds = useMemo(
+    () =>
+      employee.assignments
+        .filter((assignment) => assignment.status === 'active' && assignment.canViewCommission)
+        .map((assignment) => assignment.storeId),
+    [employee.assignments],
+  );
+  const employeeVisibleCommissions = useMemo(
+    () =>
+      employeeCommissions.filter((commission) => {
+        const dealer = dealers.find((row) => row.id === commission.dealerId);
+        return dealer ? commissionStoreIds.includes(dealer.storeId) : false;
+      }),
+    [commissionStoreIds, employeeCommissions],
+  );
   const role: Role = auth.authEnabled ? (auth.isAdmin ? 'admin' : 'employee') : demoRole;
   const roleLabel = auth.authEnabled
     ? auth.roles.length > 0
@@ -47,11 +112,31 @@ export function App() {
   useEffect(() => { saveToStorage('employeeCommissions', employeeCommissions); }, [employeeCommissions]);
   useEffect(() => { saveToStorage('employeePayments', employeePayments); }, [employeePayments]);
   useEffect(() => { saveToStorage('employeePaymentAllocations', employeePaymentAllocations); }, [employeePaymentAllocations]);
+  useEffect(() => { saveToStorage('employeeAssignments', employeeAssignments); }, [employeeAssignments]);
   useEffect(() => {
-    setEmployeeCommissions((existing) =>
-      generateEmployeeCommissionsForStatements(statements, dealers, employees, transactions, existing),
-    );
-  }, [statements, transactions]);
+    setEmployeeCommissions((existing) => {
+      const generated = generateEmployeeCommissionsForStatements(
+        statements,
+        dealers,
+        employeesWithAssignments,
+        transactions,
+      );
+      const existingIds = new Set(existing.map((commission) => commission.id));
+      return [...existing, ...generated.filter((commission) => !existingIds.has(commission.id))];
+    });
+  }, [statements, transactions, employeesWithAssignments]);
+
+  const updateAssignment = (employeeId: string, nextAssignment: Assignment) => {
+    setEmployeeAssignments((previous) => {
+      const current = previous[employeeId] || [];
+      return {
+        ...previous,
+        [employeeId]: current.map((assignment) =>
+          assignment.storeId === nextAssignment.storeId ? normalizeAssignment(nextAssignment) : assignment,
+        ),
+      };
+    });
+  };
 
   const resetDemoData = () => {
     if (!window.confirm('Reset demo data? This clears local persisted state.')) return;
@@ -63,6 +148,7 @@ export function App() {
     setEmployeeCommissions(initialEmployeeCommissions);
     setEmployeePayments([]);
     setEmployeePaymentAllocations([]);
+    setEmployeeAssignments(initialEmployeeAssignments);
     setFlash('Demo data reset to seeded defaults.');
   };
 
@@ -95,16 +181,16 @@ export function App() {
           )
         }
       >
-        <Route index element={<DashboardPage dealers={dealers} statements={statements} transactions={transactions} allocations={dealerPaymentAllocations} role={role} employee={employee} employeeCommissions={employeeCommissions} employeePaymentAllocations={employeePaymentAllocations} dealerPayments={dealerPayments} employeePayments={employeePayments} />} />
+        <Route index element={<DashboardPage dealers={dealers} statements={statements} transactions={transactions} allocations={dealerPaymentAllocations} role={role} employee={{ ...employee, assignments: visibleEmployeeAssignments }} employeeCommissions={role === 'employee' ? employeeVisibleCommissions : employeeCommissions} employeePaymentAllocations={employeePaymentAllocations} dealerPayments={dealerPayments} employeePayments={employeePayments} />} />
         <Route path="dealers" element={<DealersPage dealers={dealers} statements={statements} transactions={transactions} allocations={dealerPaymentAllocations} storeIds={role === 'employee' ? assignedStoreIds : undefined} />} />
-        <Route path="dealers/:dealerId" element={<DealerProfilePage role={role} assignedStoreIds={assignedStoreIds} dealers={dealers} statements={statements} transactions={transactions} setStatements={setStatements} setFlash={setFlash} payments={dealerPayments} allocations={dealerPaymentAllocations} setPayments={setDealerPayments} setAllocations={setDealerPaymentAllocations} employees={employees} employeeCommissions={employeeCommissions} setEmployeeCommissions={setEmployeeCommissions} />} />
-        <Route path="statements/:statementId" element={<StatementDetailPage role={role} assignedStoreIds={assignedStoreIds} dealers={dealers} statements={statements} transactions={transactions} setTransactions={setTransactions} setFlash={setFlash} allocations={dealerPaymentAllocations} employees={employees} />} />
+        <Route path="dealers/:dealerId" element={<DealerProfilePage role={role} assignedStoreIds={assignedStoreIds} addTransactionStoreIds={addTransactionStoreIds} dealers={dealers} statements={statements} transactions={transactions} setStatements={setStatements} setFlash={setFlash} payments={dealerPayments} allocations={dealerPaymentAllocations} setPayments={setDealerPayments} setAllocations={setDealerPaymentAllocations} employees={employeesWithAssignments} employeeCommissions={employeeCommissions} setEmployeeCommissions={setEmployeeCommissions} />} />
+        <Route path="statements/:statementId" element={<StatementDetailPage role={role} assignedStoreIds={assignedStoreIds} addTransactionStoreIds={addTransactionStoreIds} dealers={dealers} statements={statements} transactions={transactions} setTransactions={setTransactions} setFlash={setFlash} allocations={dealerPaymentAllocations} employees={employeesWithAssignments} />} />
         <Route path="transactions" element={role === 'admin' ? <TransactionsPage role={role} assignedStoreIds={assignedStoreIds} dealers={dealers} transactions={transactions} setTransactions={setTransactions} setFlash={setFlash} /> : <Navigate to="/" replace />} />
-        <Route path="employees" element={role === 'admin' ? <EmployeesPage employees={employees} dealers={dealers} commissions={employeeCommissions} allocations={employeePaymentAllocations} /> : <Navigate to="/" replace />} />
-        <Route path="employees/:employeeId" element={<EmployeeProfilePage role={role} employees={employees} dealers={dealers} commissions={employeeCommissions} payments={employeePayments} allocations={employeePaymentAllocations} setPayments={setEmployeePayments} setAllocations={setEmployeePaymentAllocations} setCommissions={setEmployeeCommissions} setFlash={setFlash} />} />
-        <Route path="assignments" element={role === 'admin' ? <AssignmentsPage employees={employees} dealers={dealers} /> : <Navigate to="/" replace />} />
+        <Route path="employees" element={role === 'admin' ? <EmployeesPage employees={employeesWithAssignments} dealers={dealers} commissions={employeeCommissions} allocations={employeePaymentAllocations} /> : <Navigate to="/" replace />} />
+        <Route path="employees/:employeeId" element={<EmployeeProfilePage role={role} employees={employeesWithAssignments} dealers={dealers} commissions={employeeCommissions} payments={employeePayments} allocations={employeePaymentAllocations} setPayments={setEmployeePayments} setAllocations={setEmployeePaymentAllocations} setCommissions={setEmployeeCommissions} setFlash={setFlash} />} />
+        <Route path="assignments" element={role === 'admin' ? <AssignmentsPage employees={employeesWithAssignments} dealers={dealers} onUpdateAssignment={updateAssignment} /> : <Navigate to="/" replace />} />
         <Route path="settings" element={role === 'admin' ? <SettingsPage onResetDemoData={resetDemoData} /> : <Navigate to="/" replace />} />
-        <Route path="my-commissions" element={<MyCommissionsPage role={role} employee={employee} dealers={dealers} commissions={employeeCommissions} payments={employeePayments} allocations={employeePaymentAllocations} />} />
+        <Route path="my-commissions" element={<MyCommissionsPage role={role} employee={employee} dealers={dealers} commissions={role === 'employee' ? employeeVisibleCommissions : employeeCommissions} payments={employeePayments} allocations={employeePaymentAllocations} />} />
       </Route>
     </Routes>
   );
