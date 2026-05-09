@@ -64,7 +64,15 @@ export function DashboardPage({
         transaction.status === 'pending_review',
     ).length;
     const assignedStoreNames = employee.assignments
-      .map((assignment) => stores.find((store) => store.id === assignment.storeId)?.name || assignment.storeId)
+      .map((assignment) => {
+        const assignedDealer = dealers.find((dealer) => dealer.storeId === assignment.storeId);
+        return (
+          assignedDealer?.storeName ||
+          assignedDealer?.name ||
+          stores.find((store) => store.id === assignment.storeId)?.name ||
+          assignment.storeId
+        );
+      })
       .join(', ');
 
     return (
@@ -112,7 +120,7 @@ export function DashboardPage({
 
     return {
       dealer,
-      storeName: stores.find((store) => store.id === dealer.storeId)?.name || dealer.storeId,
+      storeName: dealer.storeName || stores.find((store) => store.id === dealer.storeId)?.name || dealer.storeId,
       openBalance: getDealerOpenBalance(dealer.id, statements, transactions, dealers, allocations),
       currentMonthReceivable: getCurrentMonthReceivable(
         dealer.id,

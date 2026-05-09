@@ -1049,10 +1049,10 @@ export function EmployeesPage({ employees, dealers, commissions, allocations }: 
                 <td className="p-2">{employee.name}</td>
                 <td>
                   {employee.assignments
-                    .map(
-                      (assignment) =>
-                        `${dealers.find((dealer) => dealer.storeId === assignment.storeId)?.name || assignment.storeId} (${assignment.commissionRatePct}%)`,
-                    )
+                    .map((assignment) => {
+                      const dealer = dealers.find((row) => row.storeId === assignment.storeId);
+                      return `${dealer?.storeName || dealer?.name || assignment.storeId} (${assignment.commissionRatePct}%)`;
+                    })
                     .join(', ')}
                 </td>
                 <td>{formatUsd(open)}</td>
