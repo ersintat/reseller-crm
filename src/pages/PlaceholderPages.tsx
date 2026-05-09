@@ -1,5 +1,5 @@
 import { Link, Navigate, useParams } from 'react-router-dom';
-import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
+import { useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import {
   Assignment,
   AssignmentStatus,
@@ -187,6 +187,7 @@ export function DealerProfilePage({
     mode: 'fifo' as 'fifo' | 'manual',
   });
   const [manual, setManual] = useState<Record<string, string>>({});
+  const statementMonthRef = useRef<HTMLInputElement>(null);
 
   if (!dealer) return <PageShell title="Dealer Profile" subtitle="Dealer not found" />;
   if (role === 'employee' && !assignedStoreIds.includes(dealer.storeId)) return <Navigate to="/dealers" replace />;
@@ -213,21 +214,23 @@ export function DealerProfilePage({
   let running = 0;
 
   const createStatement = () => {
+    const selectedMonth = statementMonthRef.current?.value || month;
+
     if (onCreateStatement) {
-      void onCreateStatement(dealer, month);
+      void onCreateStatement(dealer, selectedMonth);
       return;
     }
 
-    if (dealerStatements.some((statement) => statement.month === month)) {
+    if (dealerStatements.some((statement) => statement.month === selectedMonth)) {
       setFlash('Error: duplicate statement month blocked.');
       return;
     }
     setStatements((previous) => [
       ...previous,
       {
-        id: `st-${dealer.id}-${month}`,
+        id: `st-${dealer.id}-${selectedMonth}`,
         dealerId: dealer.id,
-        month,
+        month: selectedMonth,
         status: 'draft',
         paidAmount: 0,
         createdAt: new Date().toISOString(),
@@ -337,6 +340,7 @@ export function DealerProfilePage({
             <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-end">
               <FormLabel label="Statement month">
                 <input
+                  ref={statementMonthRef}
                   type="month"
                   className="h-10 w-full px-3"
                   value={month}
