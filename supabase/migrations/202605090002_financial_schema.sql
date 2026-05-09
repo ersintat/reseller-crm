@@ -97,11 +97,11 @@ create table public.employee_store_assignments (
   can_add_transactions boolean not null default true,
   can_edit_transactions boolean not null default false,
   can_view_commission boolean not null default true,
-  status public.assignment_status not null default 'active',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint employee_store_assignments_unique_pair unique (employee_id, dealer_id),
-  constraint employee_store_assignments_commission_rate_range check (commission_rate between 0 and 100)
+  constraint employee_store_assignments_commission_rate_range check (commission_rate between 0 and 100),
+  status public.assignment_status not null default 'active'
 );
 
 create table public.statements (
