@@ -1,4 +1,4 @@
-import { Link, Navigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import {
   Assignment,
@@ -41,6 +41,7 @@ import { PageShell } from './Shared';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { Button, DataTable, EmptyState, SectionCard } from '../components/ui/Primitives';
 import type { RecordDealerPaymentInput, RecordEmployeePaymentInput } from '../lib/settlementActivityService';
+import { formatTransactionType, platformPayoutHelper } from '../lib/displayLabels';
 
 const transactionTypes: TransactionType[] = [
   'bank_payout',
@@ -55,9 +56,6 @@ const adjustmentScopes: ManualAdjustmentScope[] = [
   'employee_commission_base',
 ];
 const adjustmentDirections: ManualAdjustmentDirection[] = ['increase', 'decrease'];
-const bankPayoutHelper =
-  'bank_payout is a platform payout deposited into the dealer bank account. It is not a dealer payment.';
-
 function SummaryCard({ label, value, helper }: { label: string; value: string; helper?: string }) {
   return (
     <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -126,7 +124,7 @@ function StatementBreakdown({ statement, dealer, transactions, allocations }: {
       action={<StatusBadge status={statement.status} />}
     >
       <div className="space-y-4 p-5">
-        <InfoCallout>{bankPayoutHelper}</InfoCallout>
+        <InfoCallout>{platformPayoutHelper}</InfoCallout>
         <div className="grid gap-3 md:grid-cols-4">
         {rows.map(([label, value]) => (
           <div key={String(label)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
@@ -159,6 +157,7 @@ interface DealerProfilePageProps {
   onCreateStatement?: (dealer: Dealer, month: string) => Promise<void> | void;
   onUpdateStatementStatus?: (statement: Statement, status: Statement['status']) => Promise<void> | void;
   onRecordDealerPayment?: (input: RecordDealerPaymentInput) => Promise<void> | void;
+  onDeleteStatement?: (statement: Statement) => Promise<boolean> | boolean;
 }
 
 export function DealerProfilePage({
@@ -179,6 +178,7 @@ export function DealerProfilePage({
   onCreateStatement,
   onUpdateStatementStatus,
   onRecordDealerPayment,
+  onDeleteStatement,
 }: DealerProfilePageProps) {
   const { dealerId } = useParams();
   const dealer = dealers.find((row) => row.id === dealerId);
@@ -348,7 +348,7 @@ export function DealerProfilePage({
         />
       </div>
 
-      <InfoCallout>{bankPayoutHelper}</InfoCallout>
+      <InfoCallout>{platformPayoutHelper}</InfoCallout>
 
       {role === 'admin' && (
         <div className="grid gap-5 xl:grid-cols-3">
@@ -481,7 +481,9 @@ export function DealerProfilePage({
                     className={isPayment ? 'border-t border-slate-100 bg-emerald-50/40' : 'border-t border-slate-100 hover:bg-slate-50'}
                   >
                     <td className="px-4 py-3 text-slate-600">{row.date}</td>
-                    <td className="px-4 py-3 font-medium text-slate-900">{row.kind}</td>
+                    <td className="px-4 py-3 font-medium text-slate-900">
+                      {row.kind}
+                    </td>
                     <td className="px-4 py-3 text-slate-600">{row.description}</td>
                     <td className={isPayment ? 'px-4 py-3 text-right font-semibold text-emerald-700' : 'px-4 py-3 text-right font-semibold text-slate-950'}>
                       {formatUsd(row.amount)}
@@ -539,32 +541,42 @@ export function DealerProfilePage({
                         </Link>
                       )}
                       {role === 'admin' && (
-                        <button
-                          className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-indigoBrand hover:bg-indigo-50"
-                          onClick={() => {
-                            if (onUpdateStatementStatus) {
-                              void onUpdateStatementStatus(statement, 'closed');
-                            } else {
-                              setStatements((previous) =>
-                                previous.map((row) =>
-                                  row.id === statement.id ? { ...row, status: 'closed' } : row,
+                        <>
+                          <button
+                            className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-indigoBrand hover:bg-indigo-50"
+                            onClick={() => {
+                              if (onUpdateStatementStatus) {
+                                void onUpdateStatementStatus(statement, 'closed');
+                              } else {
+                                setStatements((previous) =>
+                                  previous.map((row) =>
+                                    row.id === statement.id ? { ...row, status: 'closed' } : row,
+                                  ),
+                                );
+                              }
+                              setEmployeeCommissions((previous) =>
+                                generateEmployeeCommissionsForStatement(
+                                  statement,
+                                  dealers,
+                                  employees,
+                                  transactions,
+                                  previous,
                                 ),
                               );
-                            }
-                            setEmployeeCommissions((previous) =>
-                              generateEmployeeCommissionsForStatement(
-                                statement,
-                                dealers,
-                                employees,
-                                transactions,
-                                previous,
-                              ),
-                            );
-                            setFlash('Statement closed and commissions generated.');
-                          }}
-                        >
-                          Close
-                        </button>
+                              setFlash('Statement closed and commissions generated.');
+                            }}
+                          >
+                            Close
+                          </button>
+                          <button
+                            className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
+                            onClick={() => {
+                              void onDeleteStatement?.(statement);
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </>
                       )}
                     </div>
                   </td>
@@ -602,6 +614,7 @@ interface StatementDetailPageProps {
       adjustmentDirection?: ManualAdjustmentDirection;
     },
   ) => Promise<void> | void;
+  onDeleteStatement?: (statement: Statement) => Promise<boolean> | boolean;
 }
 
 export function StatementDetailPage({
@@ -616,8 +629,10 @@ export function StatementDetailPage({
   allocations,
   employees,
   onCreateTransaction,
+  onDeleteStatement,
 }: StatementDetailPageProps) {
   const { statementId } = useParams();
+  const navigate = useNavigate();
   const statement = statements.find((row) => row.id === statementId);
   const [form, setForm] = useState({
     date: '2026-04-15',
@@ -688,6 +703,28 @@ export function StatementDetailPage({
 
   return (
     <PageShell title="Statement Detail" subtitle={`${dealer.name} · ${statement.month} financial review`}>
+      {role === 'admin' && (
+        <SectionCard
+          title="Statement Actions"
+          subtitle="Delete is blocked when dealer payments or paid employee commissions are linked."
+          action={
+            <Button
+              variant="danger"
+              onClick={async () => {
+                const deleted = await onDeleteStatement?.(statement);
+                if (deleted) navigate(`/dealers/${dealer.id}`);
+              }}
+            >
+              Delete Statement
+            </Button>
+          }
+        >
+          <div className="p-5 text-sm text-slate-600">
+            Use delete only for statements created by mistake. Related transactions and unpaid commission rows are removed with the statement.
+          </div>
+        </SectionCard>
+      )}
+
       <StatementBreakdown statement={statement} dealer={dealer} transactions={transactions} allocations={allocations} />
 
       {canAddTransaction ? (
@@ -721,7 +758,9 @@ export function StatementDetailPage({
                   className="h-10 w-full px-3"
                 >
                   {transactionTypes.map((type) => (
-                    <option key={type}>{type}</option>
+                    <option key={type} value={type}>
+                      {formatTransactionType(type)}
+                    </option>
                   ))}
                 </select>
               </FormLabel>
@@ -816,7 +855,7 @@ export function StatementDetailPage({
                 }`}
               >
                 <td className="px-4 py-3">{transaction.date}</td>
-                <td className="px-4 py-3 font-medium">{transaction.type}</td>
+                <td className="px-4 py-3 font-medium">{formatTransactionType(transaction.type)}</td>
                 <td className="px-4 py-3">
                   <StatusBadge status={transaction.status} />
                 </td>
@@ -965,7 +1004,9 @@ export function TransactionsPage({
             >
               <option value="">All types</option>
               {transactionTypes.map((type) => (
-                <option key={type}>{type}</option>
+                <option key={type} value={type}>
+                  {formatTransactionType(type)}
+                </option>
               ))}
             </select>
           </FormLabel>
@@ -1012,7 +1053,7 @@ export function TransactionsPage({
                 <tr key={transaction.id} className="border-t border-amber-100 bg-amber-50/50">
                   <td className="px-4 py-3">{transaction.date}</td>
                   <td className="px-4 py-3 font-medium text-slate-950">{dealers.find((dealer) => dealer.id === transaction.dealerId)?.name}</td>
-                  <td className="px-4 py-3">{transaction.type}</td>
+                  <td className="px-4 py-3">{formatTransactionType(transaction.type)}</td>
                   <td className="px-4 py-3 text-right font-semibold">{formatUsd(transaction.amount)}</td>
                   <td className="px-4 py-3">{transaction.createdByRole || 'admin'}</td>
                   <td className="px-4 py-3 text-right">
@@ -1060,7 +1101,7 @@ export function TransactionsPage({
                   }`}
                 >
                   <td className="px-4 py-3 font-medium text-slate-950">{dealers.find((dealer) => dealer.id === transaction.dealerId)?.name}</td>
-                  <td className="px-4 py-3">{transaction.type}</td>
+                  <td className="px-4 py-3">{formatTransactionType(transaction.type)}</td>
                   <td className="px-4 py-3">
                     <StatusBadge status={transaction.status} />
                   </td>
@@ -1638,14 +1679,24 @@ export function AssignmentsPage({
   );
 }
 
-export function SettingsPage({ onResetDemoData }: { onResetDemoData: () => void }) {
+export function SettingsPage({ onResetDemoData, dataModeLabel }: { onResetDemoData: () => void; dataModeLabel: string }) {
   return (
     <PageShell title="Settings" subtitle="Demo environment controls">
-      <div className="bg-white border rounded-lg p-4">
-        <p className="text-sm text-slate-600 mb-2">Local demo data is persisted in your browser storage.</p>
-        <button className="bg-red-600 text-white px-3 py-2 rounded" onClick={onResetDemoData}>
-          Reset Demo Data
-        </button>
+      <div className="grid gap-5 xl:grid-cols-2">
+        <SectionCard title="System Status" subtitle="Current data source and runtime mode.">
+          <div className="space-y-2 p-5">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Data source</p>
+            <p className="text-sm font-medium text-slate-900">{dataModeLabel}</p>
+          </div>
+        </SectionCard>
+        <SectionCard title="Demo Data" subtitle="Local browser persistence controls.">
+          <div className="p-5">
+            <p className="mb-3 text-sm text-slate-600">Local demo data is persisted in your browser storage.</p>
+            <Button variant="danger" onClick={onResetDemoData}>
+              Reset Demo Data
+            </Button>
+          </div>
+        </SectionCard>
       </div>
     </PageShell>
   );

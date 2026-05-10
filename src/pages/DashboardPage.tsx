@@ -24,6 +24,7 @@ import {
 import { PageShell } from './Shared';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { DataTable, EmptyState, KpiCard, PageHeader, SectionCard } from '../components/ui/Primitives';
+import { formatTransactionType } from '../lib/displayLabels';
 
 interface DashboardPageProps {
   dealers: Dealer[];
@@ -182,7 +183,7 @@ export function DashboardPage({
     })),
     ...transactions.map((transaction) => ({
       date: transaction.date,
-      kind: transaction.type,
+      kind: formatTransactionType(transaction.type),
       title: dealers.find((dealer) => dealer.id === transaction.dealerId)?.name || 'Transaction',
       amount: transaction.amount,
       status: transaction.status,
@@ -328,7 +329,7 @@ export function DashboardPage({
                       <tr key={transaction.id} className="border-t border-slate-100 transition hover:bg-amber-50/40">
                         <td className="px-4 py-3 text-slate-600">{transaction.date}</td>
                         <td className="px-4 py-3 font-medium text-slate-950">{dealer?.name || 'Unknown dealer'}</td>
-                        <td className="px-4 py-3">{transaction.type}</td>
+                        <td className="px-4 py-3">{formatTransactionType(transaction.type)}</td>
                         <td className="px-4 py-3 font-medium text-right">{formatUsd(transaction.amount)}</td>
                         <td className="px-4 py-3">{transaction.createdByRole || 'admin'}</td>
                         <td className="px-4 py-3">

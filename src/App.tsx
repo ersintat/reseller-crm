@@ -20,6 +20,7 @@ import {
   approveTransaction,
   createStatement as createSupabaseStatement,
   createTransaction as createSupabaseTransaction,
+  deleteStatementSafely as deleteSupabaseStatementSafely,
   fetchDealerPaymentAllocations,
   fetchDealerPayments,
   fetchEmployeeCommissions,
@@ -563,6 +564,73 @@ export function App() {
     }
   };
 
+  const pruneDeletedStatementState = (statement: Statement) => {
+    const canRemoveCommission = (commission: EmployeeCommission) =>
+      commission.statementId !== statement.id ||
+      ['paid', 'partially_paid'].includes(commission.status) ||
+      commission.paidAmount > 0;
+
+    if (usingSupabaseActivityData) {
+      setSupabaseStatements((previous) => (previous ?? []).filter((row) => row.id !== statement.id));
+      setSupabaseTransactions((previous) =>
+        (previous ?? []).filter((transaction) => transaction.statementId !== statement.id),
+      );
+      setSupabaseEmployeeCommissions((previous) => (previous ?? []).filter(canRemoveCommission));
+      return;
+    }
+
+    setStatements((previous) => previous.filter((row) => row.id !== statement.id));
+    setTransactions((previous) => previous.filter((transaction) => transaction.statementId !== statement.id));
+    setEmployeeCommissions((previous) => previous.filter(canRemoveCommission));
+  };
+
+  const handleDeleteStatement = async (statement: Statement) => {
+    if (role !== 'admin') return false;
+
+    const dealerAllocationExists = activeDealerPaymentAllocations.some(
+      (allocation) => allocation.statementId === statement.id,
+    );
+    if (dealerAllocationExists) {
+      setFlash('This statement has dealer payment allocations and cannot be deleted. Remove related payment allocations first.');
+      return false;
+    }
+
+    const commissionsForStatement = activeEmployeeCommissions.filter(
+      (commission) => commission.statementId === statement.id,
+    );
+    const commissionIds = new Set(commissionsForStatement.map((commission) => commission.id));
+    const hasEmployeePaymentAllocation = activeEmployeePaymentAllocations.some((allocation) =>
+      commissionIds.has(allocation.commissionId),
+    );
+    const hasPaidCommission = commissionsForStatement.some(
+      (commission) =>
+        ['paid', 'partially_paid'].includes(commission.status) ||
+        commission.paidAmount > 0 ||
+        hasEmployeePaymentAllocation,
+    );
+
+    if (hasPaidCommission) {
+      setFlash('This statement has paid employee commissions and cannot be deleted.');
+      return false;
+    }
+
+    if (!window.confirm('Delete this statement? This will also delete related transactions and unpaid commission rows. This action cannot be undone.')) {
+      return false;
+    }
+
+    try {
+      if (usingSupabaseActivityData) {
+        await deleteSupabaseStatementSafely(statement.supabaseId ?? statement.id);
+      }
+      pruneDeletedStatementState(statement);
+      setFlash('Statement deleted.');
+      return true;
+    } catch (error) {
+      setFlash(friendlySupabaseError(error, 'Statement could not be deleted'));
+      return false;
+    }
+  };
+
   const handleCreateTransaction = async (
     statement: Statement,
     dealer: Dealer,
@@ -770,13 +838,13 @@ export function App() {
       >
         <Route index element={<DashboardPage dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} allocations={activeDealerPaymentAllocations} role={role} employee={{ ...employee, assignments: visibleEmployeeAssignments }} employeeCommissions={role === 'employee' ? employeeVisibleCommissions : activeEmployeeCommissions} employeePaymentAllocations={activeEmployeePaymentAllocations} dealerPayments={activeDealerPayments} employeePayments={activeEmployeePayments} />} />
         <Route path="dealers" element={<DealersPage dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} allocations={activeDealerPaymentAllocations} storeIds={role === 'employee' ? assignedStoreIds : undefined} />} />
-        <Route path="dealers/:dealerId" element={<DealerProfilePage role={role} assignedStoreIds={assignedStoreIds} addTransactionStoreIds={addTransactionStoreIds} dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} setStatements={setActiveStatements} setFlash={setFlash} payments={activeDealerPayments} allocations={activeDealerPaymentAllocations} setPayments={setDealerPayments} setAllocations={setDealerPaymentAllocations} employees={employeesWithAssignments} employeeCommissions={activeEmployeeCommissions} setEmployeeCommissions={setEmployeeCommissions} onCreateStatement={usingSupabaseActivityData ? handleCreateStatement : undefined} onUpdateStatementStatus={usingSupabaseActivityData ? handleUpdateStatementStatus : undefined} onRecordDealerPayment={usingSupabaseDealerPaymentData ? handleRecordDealerPayment : undefined} />} />
-        <Route path="statements/:statementId" element={<StatementDetailPage role={role} assignedStoreIds={assignedStoreIds} addTransactionStoreIds={addTransactionStoreIds} dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} setTransactions={setActiveTransactions} setFlash={setFlash} allocations={activeDealerPaymentAllocations} employees={employeesWithAssignments} onCreateTransaction={usingSupabaseActivityData ? handleCreateTransaction : undefined} />} />
+        <Route path="dealers/:dealerId" element={<DealerProfilePage role={role} assignedStoreIds={assignedStoreIds} addTransactionStoreIds={addTransactionStoreIds} dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} setStatements={setActiveStatements} setFlash={setFlash} payments={activeDealerPayments} allocations={activeDealerPaymentAllocations} setPayments={setDealerPayments} setAllocations={setDealerPaymentAllocations} employees={employeesWithAssignments} employeeCommissions={activeEmployeeCommissions} setEmployeeCommissions={setEmployeeCommissions} onCreateStatement={usingSupabaseActivityData ? handleCreateStatement : undefined} onUpdateStatementStatus={usingSupabaseActivityData ? handleUpdateStatementStatus : undefined} onRecordDealerPayment={usingSupabaseDealerPaymentData ? handleRecordDealerPayment : undefined} onDeleteStatement={handleDeleteStatement} />} />
+        <Route path="statements/:statementId" element={<StatementDetailPage role={role} assignedStoreIds={assignedStoreIds} addTransactionStoreIds={addTransactionStoreIds} dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} setTransactions={setActiveTransactions} setFlash={setFlash} allocations={activeDealerPaymentAllocations} employees={employeesWithAssignments} onCreateTransaction={usingSupabaseActivityData ? handleCreateTransaction : undefined} onDeleteStatement={handleDeleteStatement} />} />
         <Route path="transactions" element={role === 'admin' ? <TransactionsPage role={role} assignedStoreIds={assignedStoreIds} dealers={activeDealers} transactions={activeTransactions} setTransactions={setActiveTransactions} setFlash={setFlash} onUpdateTransactionStatus={usingSupabaseActivityData ? handleTransactionStatus : undefined} /> : <Navigate to="/" replace />} />
         <Route path="employees" element={role === 'admin' ? <EmployeesPage employees={employeesWithAssignments} dealers={activeDealers} commissions={activeEmployeeCommissions} allocations={activeEmployeePaymentAllocations} /> : <Navigate to="/" replace />} />
         <Route path="employees/:employeeId" element={<EmployeeProfilePage role={role} employees={employeesWithAssignments} dealers={activeDealers} commissions={activeEmployeeCommissions} payments={activeEmployeePayments} allocations={activeEmployeePaymentAllocations} setPayments={setEmployeePayments} setAllocations={setEmployeePaymentAllocations} setCommissions={setEmployeeCommissions} setFlash={setFlash} onRecordEmployeePayment={usingSupabaseEmployeeSettlementData ? handleRecordEmployeePayment : undefined} />} />
         <Route path="assignments" element={role === 'admin' ? <AssignmentsPage employees={employeesWithAssignments} dealers={activeDealers} onUpdateAssignment={updateAssignment} /> : <Navigate to="/" replace />} />
-        <Route path="settings" element={role === 'admin' ? <SettingsPage onResetDemoData={resetDemoData} /> : <Navigate to="/" replace />} />
+        <Route path="settings" element={role === 'admin' ? <SettingsPage onResetDemoData={resetDemoData} dataModeLabel={referenceStatusLabel} /> : <Navigate to="/" replace />} />
         <Route path="my-commissions" element={<MyCommissionsPage role={role} employee={employee} dealers={activeDealers} commissions={role === 'employee' ? employeeVisibleCommissions : activeEmployeeCommissions} payments={activeEmployeePayments} allocations={activeEmployeePaymentAllocations} />} />
       </Route>
     </Routes>

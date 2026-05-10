@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
+import { useEffect } from 'react';
 import { Role } from '../../types';
 import { Button } from '../ui/Primitives';
 
@@ -35,6 +36,14 @@ export function AppLayout({
   dataModeLabel: string;
   dataSourceError?: string;
 }) {
+  const isErrorFlash = /\b(error|could not|cannot|invalid|failed|missing)\b/i.test(flash);
+
+  useEffect(() => {
+    if (!flash || isErrorFlash) return;
+    const timeout = window.setTimeout(() => setFlash(''), 4000);
+    return () => window.clearTimeout(timeout);
+  }, [flash, isErrorFlash, setFlash]);
+
   const initials = (userEmail || 'Demo User')
     .split('@')[0]
     .split(/[._-]/)
@@ -97,11 +106,6 @@ export function AppLayout({
                 </NavLink>
               ))}
           </nav>
-
-          <div className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">
-            <p className="font-medium text-slate-700">Financial data mode</p>
-            <p className="mt-1">{dataModeLabel}</p>
-          </div>
         </aside>
 
         <main className="flex-1 min-w-0">
@@ -153,9 +157,19 @@ export function AppLayout({
               </div>
             )}
             {flash && (
-              <div className="mb-4 flex justify-between rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900 shadow-sm">
-                <span>{flash}</span>
-                <button className="font-medium text-indigo-700" onClick={() => setFlash('')}>
+              <div
+                className={[
+                  'fixed right-5 top-20 z-30 flex max-w-md items-start gap-3 rounded-xl border px-4 py-3 text-sm shadow-lg',
+                  isErrorFlash
+                    ? 'border-red-200 bg-red-50 text-red-800'
+                    : 'border-indigo-100 bg-white text-slate-800',
+                ].join(' ')}
+              >
+                <span className="leading-5">{flash}</span>
+                <button
+                  className={isErrorFlash ? 'font-semibold text-red-700' : 'font-semibold text-slate-500'}
+                  onClick={() => setFlash('')}
+                >
                   x
                 </button>
               </div>

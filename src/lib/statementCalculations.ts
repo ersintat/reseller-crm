@@ -250,7 +250,7 @@ export function getDealerLedgerRows(
     .forEach((payment) =>
       rows.push({
         date: payment.paymentDate,
-        kind: 'Payment Received',
+        kind: 'Payment Received from Dealer',
         description: payment.description || 'Dealer payment',
         amount: -payment.amount,
       }),
