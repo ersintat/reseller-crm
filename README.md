@@ -7,7 +7,7 @@ Baseline React + TypeScript + Vite app for the Dealer Settlement Manager product
 - TypeScript
 - Vite
 - Tailwind CSS
-- Supabase Auth foundation with mock/localStorage business data
+- Supabase Auth and Supabase-backed settlement data with demo/localStorage fallback
 
 ## Getting Started
 
@@ -102,3 +102,42 @@ Statement, transaction, dealer payment, dealer payment allocation, employee comm
 - Persisted slices include statements, transactions, dealer payments/allocations, and employee commissions/payments/allocations.
 - Use **Settings → Reset Demo Data** to clear persisted state and restore seeded defaults.
 - TODO: this temporary browser persistence will be replaced by Supabase-backed persistence.
+
+## Vercel Deployment
+
+The app is a Vite single-page React app. `vercel.json` rewrites all routes to `index.html` so refreshed deep links such as `/dealers/:dealerId` and `/statements/:statementId` continue to work.
+
+1. Push the repository to GitHub.
+2. In Vercel, create a new project from the GitHub repository.
+3. Set the framework preset to **Vite** if Vercel does not detect it automatically.
+4. Configure environment variables in Vercel:
+
+```bash
+VITE_SUPABASE_URL=your-project-url
+VITE_SUPABASE_ANON_KEY=your-anon-key
+```
+
+5. Use these build settings:
+   - Build command: `npm run build`
+   - Output directory: `dist`
+   - Install command: `npm install`
+
+### Production Deployment Checklist
+
+- Supabase auth and financial migrations have been applied.
+- RLS policies are applied and enabled.
+- First admin user has been created.
+- Graphic Designer or other employee auth users are linked to `employees.user_id`.
+- Employee users have matching `user_roles` rows with the `employee` role.
+- Vercel environment variables are configured.
+- Admin login is tested in the deployed app.
+- Employee login is tested in the deployed app.
+- Statement, transaction, payment, commission, and assignment flows are smoke-tested after deployment.
+
+### Known Production Hardening Backlog
+
+- Move statement and commission recalculation into database RPCs or triggers.
+- Make payment creation and allocation insertion atomic with database transactions or RPCs.
+- Add immutable approval and audit history for transaction review.
+- Run direct RLS/API abuse tests with employee-scoped tokens.
+- Make cached statement and commission totals authoritative in the database.
