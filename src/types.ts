@@ -21,12 +21,19 @@ export interface Dealer {
   supabaseId?: string;
 }
 export interface Statement { id: string; dealerId: string; month: string; status: StatementStatus; paidAmount: number; createdAt?: string; supabaseId?: string }
-export interface SettlementTransaction { id: string; dealerId: string; statementId: string; date: string; type: TransactionType; status: TransactionStatus; amount: number; description?: string; orderCode?: string; adjustmentScope?: ManualAdjustmentScope; adjustmentDirection?: ManualAdjustmentDirection; notes?: string; createdByRole?: Role; supabaseId?: string }
-export interface DealerPayment { id: string; dealerId: string; amount: number; currency: 'USD'; paymentDate: string; description: string; allocationMode: PaymentAllocationMode; createdBy: Role; createdAt: string }
-export interface DealerPaymentAllocation { id: string; paymentId: string; statementId: string; allocatedAmount: number }
-export interface EmployeeCommission { id: string; employeeId: string; dealerId: string; statementId: string; periodMonth: number; periodYear: number; companyShareAmount: number; printingCosts: number; shippingCosts: number; commissionBaseAdjustments: number; commissionBase: number; commissionRate: number; commissionAmount: number; paidAmount: number; remainingAmount: number; status: CommissionStatus; createdAt: string; supabaseId?: string }
-export interface EmployeePayment { id: string; employeeId: string; amount: number; currency: 'USD'; paymentDate: string; description: string; allocationMode: PaymentAllocationMode; createdBy: Role; createdAt: string; supabaseId?: string }
-export interface EmployeePaymentAllocation { id: string; paymentId: string; commissionId: string; allocatedAmount: number; supabaseId?: string }
+export interface MoneyInUsd {
+  amount: number;
+  originalAmount?: number;
+  originalCurrency?: string;
+  exchangeRateToUsd?: number;
+  usdAmount?: number;
+}
+export interface SettlementTransaction extends MoneyInUsd { id: string; dealerId: string; statementId: string; date: string; type: TransactionType; status: TransactionStatus; description?: string; orderCode?: string; adjustmentScope?: ManualAdjustmentScope; adjustmentDirection?: ManualAdjustmentDirection; notes?: string; createdByRole?: Role; supabaseId?: string }
+export interface DealerPayment extends MoneyInUsd { id: string; dealerId: string; currency: string; paymentDate: string; description: string; allocationMode: PaymentAllocationMode; createdBy: Role; createdAt: string }
+export interface DealerPaymentAllocation { id: string; paymentId: string; statementId: string; allocatedAmount: number; allocatedUsdAmount?: number }
+export interface EmployeeCommission { id: string; employeeId: string; dealerId: string; statementId: string; periodMonth: number; periodYear: number; companyShareAmount: number; printingCosts: number; shippingCosts: number; commissionBaseAdjustments: number; commissionBase: number; commissionRate: number; commissionAmount: number; paidAmount: number; remainingAmount: number; status: CommissionStatus; createdAt: string; currency?: string; supabaseId?: string }
+export interface EmployeePayment extends MoneyInUsd { id: string; employeeId: string; currency: string; paymentDate: string; description: string; allocationMode: PaymentAllocationMode; createdBy: Role; createdAt: string; supabaseId?: string }
+export interface EmployeePaymentAllocation { id: string; paymentId: string; commissionId: string; allocatedAmount: number; allocatedUsdAmount?: number; supabaseId?: string }
 export type AssignmentStatus = 'active' | 'inactive';
 export interface Assignment { storeId: string; commissionRatePct: number; canViewTransactions: boolean; canAddTransactions: boolean; canEditTransactions: boolean; canViewCommission: boolean; status: AssignmentStatus; supabaseId?: string; dealerId?: string }
 export interface Employee { id: string; name: string; roleTitle: string; assignments: Assignment[]; email?: string | null; status?: 'active' | 'inactive'; supabaseId?: string }

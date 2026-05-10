@@ -35,10 +35,17 @@ export interface CommissionPreview {
 const isConfirmed = (transaction: SettlementTransaction) => transaction.status === 'confirmed';
 const isCommissionEligibleAssignment = (assignment: Assignment) => assignment.status === 'active';
 
+export const getUsdAmount = <T extends { amount: number; usdAmount?: number }>(row: T) =>
+  row.usdAmount ?? row.amount;
+
+export const getAllocatedUsdAmount = <T extends { allocatedAmount: number; allocatedUsdAmount?: number }>(
+  row: T,
+) => row.allocatedUsdAmount ?? row.allocatedAmount;
+
 const sumConfirmed = (transactions: SettlementTransaction[], type: SettlementTransaction['type']) =>
   transactions
     .filter((transaction) => transaction.type === type && isConfirmed(transaction))
-    .reduce((total, transaction) => total + transaction.amount, 0);
+    .reduce((total, transaction) => total + getUsdAmount(transaction), 0);
 
 const signedAdjustment = (
   transactions: SettlementTransaction[],
@@ -53,7 +60,7 @@ const signedAdjustment = (
     )
     .reduce(
       (total, transaction) =>
-        total + (transaction.adjustmentDirection === 'decrease' ? -transaction.amount : transaction.amount),
+        total + (transaction.adjustmentDirection === 'decrease' ? -getUsdAmount(transaction) : getUsdAmount(transaction)),
       0,
     );
 
@@ -93,7 +100,7 @@ export function calculateStatementTotals(
 export const getStatementPaidAmount = (statementId: string, allocations: DealerPaymentAllocation[]) =>
   allocations
     .filter((allocation) => allocation.statementId === statementId)
-    .reduce((total, allocation) => total + allocation.allocatedAmount, 0);
+    .reduce((total, allocation) => total + getAllocatedUsdAmount(allocation), 0);
 
 export function getEffectiveStatementPaidAmount(statement: Statement, allocations: DealerPaymentAllocation[]) {
   const allocationPaid = getStatementPaidAmount(statement.id, allocations);
@@ -252,7 +259,7 @@ export function getDealerLedgerRows(
         date: payment.paymentDate,
         kind: 'Payment Received from Dealer',
         description: payment.description || 'Dealer payment',
-        amount: -payment.amount,
+        amount: -getUsdAmount(payment),
       }),
     );
 
@@ -412,7 +419,7 @@ export const getEmployeeCommissionPaidAmount = (
 ) =>
   allocations
     .filter((allocation) => allocation.commissionId === commissionId)
-    .reduce((total, allocation) => total + allocation.allocatedAmount, 0);
+    .reduce((total, allocation) => total + getAllocatedUsdAmount(allocation), 0);
 
 export const getEmployeeCommissionRemainingAmount = (
   commission: EmployeeCommission,
@@ -487,7 +494,7 @@ export const getEmployeeCommissionLedgerRows = (
       rows.push({
         date: payment.paymentDate,
         kind: 'Payment',
-        amount: -payment.amount,
+        amount: -getUsdAmount(payment),
         payment,
       }),
     );

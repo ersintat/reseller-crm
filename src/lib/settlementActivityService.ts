@@ -34,6 +34,11 @@ interface TransactionRow {
   statement_id: string;
   type: TransactionType;
   amount: number | string;
+  currency: string | null;
+  original_amount: number | string | null;
+  original_currency: string | null;
+  exchange_rate_to_usd: number | string | null;
+  usd_amount: number | string | null;
   date: string;
   order_code: string | null;
   description: string | null;
@@ -49,6 +54,10 @@ interface DealerPaymentRow {
   dealer_id: string;
   amount: number | string;
   currency: 'USD' | string | null;
+  original_amount: number | string | null;
+  original_currency: string | null;
+  exchange_rate_to_usd: number | string | null;
+  usd_amount: number | string | null;
   payment_date: string;
   description: string | null;
   allocation_mode: PaymentAllocationMode;
@@ -60,6 +69,7 @@ interface DealerPaymentAllocationRow {
   payment_id: string;
   statement_id: string;
   allocated_amount: number | string;
+  allocated_usd_amount: number | string | null;
   created_at: string | null;
 }
 
@@ -80,6 +90,7 @@ interface EmployeeCommissionRow {
   paid_amount: number | string;
   remaining_amount: number | string;
   status: EmployeeCommission['status'];
+  currency: string | null;
   created_at: string | null;
 }
 
@@ -88,6 +99,10 @@ interface EmployeePaymentRow {
   employee_id: string;
   amount: number | string;
   currency: 'USD' | string | null;
+  original_amount: number | string | null;
+  original_currency: string | null;
+  exchange_rate_to_usd: number | string | null;
+  usd_amount: number | string | null;
   payment_date: string;
   description: string | null;
   allocation_mode: PaymentAllocationMode;
@@ -99,6 +114,7 @@ interface EmployeePaymentAllocationRow {
   payment_id: string;
   commission_id: string;
   allocated_amount: number | string;
+  allocated_usd_amount: number | string | null;
   created_at: string | null;
 }
 
@@ -106,6 +122,10 @@ export interface CreateTransactionInput {
   date: string;
   type: TransactionType;
   amount: number;
+  originalAmount?: number;
+  originalCurrency?: string;
+  exchangeRateToUsd?: number;
+  usdAmount?: number;
   description?: string;
   orderCode?: string;
   adjustmentScope?: ManualAdjustmentScope;
@@ -115,6 +135,10 @@ export interface CreateTransactionInput {
 export interface RecordDealerPaymentInput {
   dealer: Dealer;
   amount: number;
+  originalAmount?: number;
+  originalCurrency?: string;
+  exchangeRateToUsd?: number;
+  usdAmount?: number;
   paymentDate: string;
   description?: string;
   allocationMode: PaymentAllocationMode;
@@ -125,6 +149,10 @@ export interface RecordDealerPaymentInput {
 export interface RecordEmployeePaymentInput {
   employee: Employee;
   amount: number;
+  originalAmount?: number;
+  originalCurrency?: string;
+  exchangeRateToUsd?: number;
+  usdAmount?: number;
   paymentDate: string;
   description?: string;
   allocationMode: PaymentAllocationMode;
@@ -134,6 +162,25 @@ export interface RecordEmployeePaymentInput {
 }
 
 const toNumber = (value: number | string | null | undefined) => Number(value ?? 0);
+const toOptionalNumber = (value: number | string | null | undefined) =>
+  value === null || value === undefined ? undefined : Number(value);
+const reportingCurrency = 'USD';
+
+function normalizeMoneyFields(input: {
+  amount: number;
+  originalAmount?: number;
+  originalCurrency?: string;
+  exchangeRateToUsd?: number;
+  usdAmount?: number;
+}) {
+  const usdAmount = input.usdAmount ?? input.amount;
+  return {
+    usdAmount,
+    originalAmount: input.originalAmount ?? input.amount,
+    originalCurrency: input.originalCurrency ?? reportingCurrency,
+    exchangeRateToUsd: input.exchangeRateToUsd ?? 1,
+  };
+}
 
 const dealerBySupabaseId = (dealers: Dealer[]) =>
   new Map(dealers.map((dealer) => [dealer.supabaseId ?? dealer.id, dealer]));
@@ -156,6 +203,7 @@ function mapStatement(row: StatementRow, dealers: Dealer[]): Statement {
 
 function mapTransaction(row: TransactionRow, dealers: Dealer[]): SettlementTransaction {
   const dealer = dealerBySupabaseId(dealers).get(row.dealer_id);
+  const usdAmount = toNumber(row.usd_amount ?? row.amount);
   return {
     id: row.id,
     supabaseId: row.id,
@@ -164,7 +212,11 @@ function mapTransaction(row: TransactionRow, dealers: Dealer[]): SettlementTrans
     date: row.date,
     type: row.type,
     status: row.status,
-    amount: toNumber(row.amount),
+    amount: usdAmount,
+    originalAmount: toOptionalNumber(row.original_amount ?? row.amount),
+    originalCurrency: row.original_currency ?? row.currency ?? 'USD',
+    exchangeRateToUsd: toNumber(row.exchange_rate_to_usd ?? 1),
+    usdAmount,
     description: row.description ?? undefined,
     orderCode: row.order_code ?? undefined,
     adjustmentScope: row.adjustment_scope ?? undefined,
@@ -175,11 +227,16 @@ function mapTransaction(row: TransactionRow, dealers: Dealer[]): SettlementTrans
 
 function mapDealerPayment(row: DealerPaymentRow, dealers: Dealer[]): DealerPayment {
   const dealer = dealerBySupabaseId(dealers).get(row.dealer_id);
+  const usdAmount = toNumber(row.usd_amount ?? row.amount);
   return {
     id: row.id,
     dealerId: dealer?.id ?? row.dealer_id,
-    amount: toNumber(row.amount),
-    currency: 'USD',
+    amount: usdAmount,
+    currency: row.currency ?? 'USD',
+    originalAmount: toOptionalNumber(row.original_amount ?? row.amount),
+    originalCurrency: row.original_currency ?? row.currency ?? 'USD',
+    exchangeRateToUsd: toNumber(row.exchange_rate_to_usd ?? 1),
+    usdAmount,
     paymentDate: row.payment_date,
     description: row.description ?? 'Dealer payment',
     allocationMode: row.allocation_mode,
@@ -197,7 +254,8 @@ function mapDealerPaymentAllocation(
     id: row.id,
     paymentId: row.payment_id,
     statementId: statement?.id ?? row.statement_id,
-    allocatedAmount: toNumber(row.allocated_amount),
+    allocatedAmount: toNumber(row.allocated_usd_amount ?? row.allocated_amount),
+    allocatedUsdAmount: toOptionalNumber(row.allocated_usd_amount ?? row.allocated_amount),
   };
 }
 
@@ -228,18 +286,24 @@ function mapEmployeeCommission(
     paidAmount: toNumber(row.paid_amount),
     remainingAmount: toNumber(row.remaining_amount),
     status: row.status,
+    currency: row.currency ?? 'USD',
     createdAt: row.created_at ?? new Date().toISOString(),
   };
 }
 
 function mapEmployeePayment(row: EmployeePaymentRow, employees: Employee[] = []): EmployeePayment {
   const employee = employeeBySupabaseId(employees).get(row.employee_id);
+  const usdAmount = toNumber(row.usd_amount ?? row.amount);
   return {
     id: row.id,
     supabaseId: row.id,
     employeeId: employee?.id ?? row.employee_id,
-    amount: toNumber(row.amount),
-    currency: 'USD',
+    amount: usdAmount,
+    currency: row.currency ?? 'USD',
+    originalAmount: toOptionalNumber(row.original_amount ?? row.amount),
+    originalCurrency: row.original_currency ?? row.currency ?? 'USD',
+    exchangeRateToUsd: toNumber(row.exchange_rate_to_usd ?? 1),
+    usdAmount,
     paymentDate: row.payment_date,
     description: row.description ?? 'Commission payment',
     allocationMode: row.allocation_mode,
@@ -258,7 +322,8 @@ function mapEmployeePaymentAllocation(
     supabaseId: row.id,
     paymentId: row.payment_id,
     commissionId: commission?.id ?? row.commission_id,
-    allocatedAmount: toNumber(row.allocated_amount),
+    allocatedAmount: toNumber(row.allocated_usd_amount ?? row.allocated_amount),
+    allocatedUsdAmount: toOptionalNumber(row.allocated_usd_amount ?? row.allocated_amount),
   };
 }
 
@@ -382,7 +447,7 @@ export async function fetchTransactions(dealers: Dealer[]): Promise<SettlementTr
   const { data, error } = await supabase
     .from('transactions')
     .select(
-      'id,dealer_id,statement_id,type,amount,date,order_code,description,adjustment_scope,adjustment_direction,created_by_role,status,created_at',
+      'id,dealer_id,statement_id,type,amount,currency,original_amount,original_currency,exchange_rate_to_usd,usd_amount,date,order_code,description,adjustment_scope,adjustment_direction,created_by_role,status,created_at',
     )
     .order('date', { ascending: false })
     .order('created_at', { ascending: false });
@@ -405,6 +470,7 @@ export async function createTransaction({
   if (!supabase) throw new Error('Supabase is not configured.');
   const userId = await currentUserId();
   const status: TransactionStatus = role === 'admin' ? 'confirmed' : 'pending_review';
+  const money = normalizeMoneyFields(input);
 
   const { data, error } = await supabase
     .from('transactions')
@@ -412,8 +478,12 @@ export async function createTransaction({
       dealer_id: dealer.supabaseId ?? dealer.id,
       statement_id: statement.supabaseId ?? statement.id,
       type: input.type,
-      amount: input.amount,
-      currency: dealer.currency ?? 'USD',
+      amount: money.usdAmount,
+      currency: money.originalCurrency,
+      original_amount: money.originalAmount,
+      original_currency: money.originalCurrency,
+      exchange_rate_to_usd: money.exchangeRateToUsd,
+      usd_amount: money.usdAmount,
       date: input.date,
       order_code: input.orderCode || null,
       description: input.description || null,
@@ -424,7 +494,7 @@ export async function createTransaction({
       status,
     })
     .select(
-      'id,dealer_id,statement_id,type,amount,date,order_code,description,adjustment_scope,adjustment_direction,created_by_role,status,created_at',
+      'id,dealer_id,statement_id,type,amount,currency,original_amount,original_currency,exchange_rate_to_usd,usd_amount,date,order_code,description,adjustment_scope,adjustment_direction,created_by_role,status,created_at',
     )
     .single();
 
@@ -461,7 +531,7 @@ export async function fetchDealerPayments(dealers: Dealer[]): Promise<DealerPaym
 
   const { data, error } = await supabase
     .from('dealer_payments')
-    .select('id,dealer_id,amount,currency,payment_date,description,allocation_mode,created_at')
+    .select('id,dealer_id,amount,currency,original_amount,original_currency,exchange_rate_to_usd,usd_amount,payment_date,description,allocation_mode,created_at')
     .order('payment_date', { ascending: false })
     .order('created_at', { ascending: false });
 
@@ -476,7 +546,7 @@ export async function fetchDealerPaymentAllocations(
 
   const { data, error } = await supabase
     .from('dealer_payment_allocations')
-    .select('id,payment_id,statement_id,allocated_amount,created_at')
+    .select('id,payment_id,statement_id,allocated_amount,allocated_usd_amount,created_at')
     .order('created_at', { ascending: true });
 
   if (error) throw error;
@@ -488,25 +558,34 @@ export async function fetchDealerPaymentAllocations(
 export async function createDealerPayment({
   dealer,
   amount,
+  originalAmount,
+  originalCurrency,
+  exchangeRateToUsd,
+  usdAmount,
   paymentDate,
   description,
   allocationMode,
 }: Omit<RecordDealerPaymentInput, 'allocations' | 'statements'>): Promise<DealerPayment> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const userId = await currentUserId();
+  const money = normalizeMoneyFields({ amount, originalAmount, originalCurrency, exchangeRateToUsd, usdAmount });
 
   const { data, error } = await supabase
     .from('dealer_payments')
     .insert({
       dealer_id: dealer.supabaseId ?? dealer.id,
-      amount,
-      currency: dealer.currency ?? 'USD',
+      amount: money.usdAmount,
+      currency: money.originalCurrency,
+      original_amount: money.originalAmount,
+      original_currency: money.originalCurrency,
+      exchange_rate_to_usd: money.exchangeRateToUsd,
+      usd_amount: money.usdAmount,
       payment_date: paymentDate,
       description: description || 'Dealer payment',
       allocation_mode: allocationMode,
       created_by: userId,
     })
-    .select('id,dealer_id,amount,currency,payment_date,description,allocation_mode,created_at')
+    .select('id,dealer_id,amount,currency,original_amount,original_currency,exchange_rate_to_usd,usd_amount,payment_date,description,allocation_mode,created_at')
     .single();
 
   if (error) throw error;
@@ -531,13 +610,14 @@ export async function createDealerPaymentAllocations({
       payment_id: paymentId,
       statement_id: statement?.supabaseId ?? allocation.statementId,
       allocated_amount: allocation.allocatedAmount,
+      allocated_usd_amount: allocation.allocatedAmount,
     };
   });
 
   const { data, error } = await supabase
     .from('dealer_payment_allocations')
     .insert(rows)
-    .select('id,payment_id,statement_id,allocated_amount,created_at');
+    .select('id,payment_id,statement_id,allocated_amount,allocated_usd_amount,created_at');
 
   if (error) throw error;
   return ((data ?? []) as DealerPaymentAllocationRow[]).map((row) =>
@@ -568,7 +648,7 @@ export async function recordDealerPaymentWithAllocations(
 }
 
 const commissionSelect =
-  'id,employee_id,dealer_id,statement_id,period_month,period_year,company_share_amount,printing_costs,shipping_costs,commission_base_adjustments,commission_base,commission_rate,commission_amount,paid_amount,remaining_amount,status,created_at';
+  'id,employee_id,dealer_id,statement_id,period_month,period_year,company_share_amount,printing_costs,shipping_costs,commission_base_adjustments,commission_base,commission_rate,commission_amount,paid_amount,remaining_amount,status,currency,created_at';
 
 export async function fetchEmployeeCommissions({
   employees,
@@ -634,6 +714,7 @@ export async function createOrUpdateEmployeeCommissions({
         paid_amount: commission.paidAmount,
         remaining_amount: commission.remainingAmount,
         status: commission.status,
+        currency: commission.currency ?? reportingCurrency,
       };
     })
     .filter((row): row is NonNullable<typeof row> => Boolean(row));
@@ -656,7 +737,7 @@ export async function fetchEmployeePayments(employees: Employee[]): Promise<Empl
 
   const { data, error } = await supabase
     .from('employee_payments')
-    .select('id,employee_id,amount,currency,payment_date,description,allocation_mode,created_at')
+    .select('id,employee_id,amount,currency,original_amount,original_currency,exchange_rate_to_usd,usd_amount,payment_date,description,allocation_mode,created_at')
     .order('payment_date', { ascending: false })
     .order('created_at', { ascending: false });
 
@@ -671,7 +752,7 @@ export async function fetchEmployeePaymentAllocations(
 
   const { data, error } = await supabase
     .from('employee_payment_allocations')
-    .select('id,payment_id,commission_id,allocated_amount,created_at')
+    .select('id,payment_id,commission_id,allocated_amount,allocated_usd_amount,created_at')
     .order('created_at', { ascending: true });
 
   if (error) throw error;
@@ -683,25 +764,34 @@ export async function fetchEmployeePaymentAllocations(
 export async function createEmployeePayment({
   employee,
   amount,
+  originalAmount,
+  originalCurrency,
+  exchangeRateToUsd,
+  usdAmount,
   paymentDate,
   description,
   allocationMode,
 }: Omit<RecordEmployeePaymentInput, 'allocations' | 'commissions' | 'existingAllocations'>): Promise<EmployeePayment> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const userId = await currentUserId();
+  const money = normalizeMoneyFields({ amount, originalAmount, originalCurrency, exchangeRateToUsd, usdAmount });
 
   const { data, error } = await supabase
     .from('employee_payments')
     .insert({
       employee_id: employee.supabaseId ?? employee.id,
-      amount,
-      currency: 'USD',
+      amount: money.usdAmount,
+      currency: money.originalCurrency,
+      original_amount: money.originalAmount,
+      original_currency: money.originalCurrency,
+      exchange_rate_to_usd: money.exchangeRateToUsd,
+      usd_amount: money.usdAmount,
       payment_date: paymentDate,
       description: description || 'Commission payment',
       allocation_mode: allocationMode,
       created_by: userId,
     })
-    .select('id,employee_id,amount,currency,payment_date,description,allocation_mode,created_at')
+    .select('id,employee_id,amount,currency,original_amount,original_currency,exchange_rate_to_usd,usd_amount,payment_date,description,allocation_mode,created_at')
     .single();
 
   if (error) throw error;
@@ -726,13 +816,14 @@ export async function createEmployeePaymentAllocations({
       payment_id: paymentId,
       commission_id: commission?.supabaseId ?? allocation.commissionId,
       allocated_amount: allocation.allocatedAmount,
+      allocated_usd_amount: allocation.allocatedAmount,
     };
   });
 
   const { data, error } = await supabase
     .from('employee_payment_allocations')
     .insert(rows)
-    .select('id,payment_id,commission_id,allocated_amount,created_at');
+    .select('id,payment_id,commission_id,allocated_amount,allocated_usd_amount,created_at');
 
   if (error) throw error;
   return ((data ?? []) as EmployeePaymentAllocationRow[]).map((row) =>

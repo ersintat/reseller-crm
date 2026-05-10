@@ -97,6 +97,17 @@ When Supabase activity data is active, the app shows: `Supabase settlement, comm
 
 Statement, transaction, dealer payment, dealer payment allocation, employee commission, employee payment, employee payment allocation, and assignment edit writes use Supabase in auth mode. Cached statement `paid_amount` and `remaining_amount` columns are not authoritative yet; the UI still derives paid and remaining amounts from dealer payment allocations with the existing frontend helpers. Employee commission generation and payment allocation still use the frontend calculation helpers; database RPCs/triggers are deferred.
 
+## Multi-Currency Foundation
+
+USD remains the reporting and dashboard currency. Supabase money-moving rows now include original-currency storage fields for future multi-currency UI work:
+
+- `original_amount`
+- `original_currency`
+- `exchange_rate_to_usd`
+- `usd_amount`
+
+Existing `amount` fields remain USD equivalents during the transition. The service layer reads `usd_amount` when present and falls back to `amount`, so current statements, payments, commissions, and dashboard totals continue to behave as before. Manual exchange-rate entry and original-currency forms will be added in a later milestone.
+
 ## Demo persistence
 - The mock app state is persisted to `localStorage` using a versioned key prefix: `dealer-settlement-manager:v1`.
 - Persisted slices include statements, transactions, dealer payments/allocations, and employee commissions/payments/allocations.

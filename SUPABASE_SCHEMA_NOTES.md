@@ -23,6 +23,13 @@ Milestone 6B adds the financial database foundation only. The React app still us
   - Adds employee select policies for their own employee payment rows.
   - Adds employee select policies for employee payment allocations tied to their own visible commission rows.
 
+- `supabase/migrations/202605110001_multi_currency_foundation.sql`
+  - Adds original-currency storage columns to transactions, dealer payments, and employee payments.
+  - Adds USD allocation columns to dealer and employee payment allocation tables.
+  - Adds a `currency` clarity column to employee commissions.
+  - Backfills existing data so current `amount` values remain USD equivalents.
+  - Adds positive exchange-rate constraints for money-moving rows.
+
 ## Implemented
 
 - Schema and RLS foundation for future Supabase-backed financial data.
@@ -85,6 +92,21 @@ Milestone 6G adds Supabase-backed assignment editing in real auth mode:
 3. Demo mode still edits assignment state through localStorage.
 4. Rate changes affect future generated commission rows only; paid and partially paid commission rows are not retroactively overwritten.
 5. Permission changes immediately affect employee dealer visibility, transaction form access, and My Commissions visibility through the existing assignment-derived UI state.
+
+Milestone MC-1 adds the multi-currency storage foundation:
+
+1. USD remains the app reporting/base currency.
+2. Existing `amount` fields remain USD equivalents during the transition.
+3. Transactions, dealer payments, and employee payments now store:
+   - `original_amount`
+   - `original_currency`
+   - `exchange_rate_to_usd`
+   - `usd_amount`
+4. Dealer and employee payment allocations now store `allocated_usd_amount`.
+5. Employee commissions include `currency = 'USD'` for clarity.
+6. The React service layer maps snake_case currency fields to camelCase fields and prefers `usd_amount` over legacy `amount` when reading Supabase data.
+7. The current UI still captures USD amounts. Manual original-currency and exchange-rate entry will be added in a later UI milestone.
+8. Calculation helpers use USD values through compatibility helpers and do not double-convert existing data.
 
 The next milestone should add database RPCs for authoritative recalculation and transactional payment allocation.
 
