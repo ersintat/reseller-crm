@@ -62,6 +62,7 @@ const transactionTypes: TransactionType[] = [
   'manual_adjustment',
 ];
 const employeePaymentCurrencyOptions: SupportedCurrency[] = ['TRY', 'USD', 'AUD'];
+const dealerStatuses: Dealer['status'][] = ['active', 'review', 'inactive'];
 const adjustmentScopes: ManualAdjustmentScope[] = [
   'dealer_receivable_only',
   'shareable_net',
@@ -72,6 +73,14 @@ const adjustmentDirections: ManualAdjustmentDirection[] = ['increase', 'decrease
 function parsePositiveNumber(value: string) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function formatPercent(value: number) {
+  return `${(value * 100).toFixed(1).replace(/\.0$/, '')}%`;
+}
+
+function formatPercentInput(value: number) {
+  return (value * 100).toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
 }
 
 function getExchangeRateForSave(currency: SupportedCurrency, value: string) {
@@ -274,8 +283,8 @@ function StatementBreakdown({ statement, dealer, transactions, allocations }: {
   const totals = calculateStatementTotals(statement, transactions, dealer, paid);
   const rows = [
     ['Platform payout', totals.total_bank_payouts],
-    ['Dealer share', totals.dealer_share_amount],
-    ['Company share', totals.company_share_amount],
+    [`Dealer share (${formatPercent(dealer.dealerSharePercentage)})`, totals.dealer_share_amount],
+    [`Company share (${formatPercent(dealer.companySharePercentage)})`, totals.company_share_amount],
     ['Printing cost', totals.total_printing_costs],
     ['Shipping cost', totals.total_shipping_costs],
     ['Dealer receivable', totals.dealer_receivable_amount],
@@ -357,6 +366,20 @@ interface DealerProfilePageProps {
   onUpdateStatementStatus?: (statement: Statement, status: Statement['status']) => Promise<void> | void;
   onRecordDealerPayment?: (input: RecordDealerPaymentInput) => Promise<void> | void;
   onDeleteStatement?: (statement: Statement) => Promise<boolean> | boolean;
+  onUpdateDealer?: (
+    dealerId: string,
+    updates: Pick<
+      Dealer,
+      | 'name'
+      | 'storeName'
+      | 'platform'
+      | 'currency'
+      | 'dealerSharePercentage'
+      | 'companySharePercentage'
+      | 'status'
+      | 'notes'
+    >,
+  ) => Promise<void> | void;
 }
 
 export function DealerProfilePage({
@@ -378,6 +401,7 @@ export function DealerProfilePage({
   onUpdateStatementStatus,
   onRecordDealerPayment,
   onDeleteStatement,
+  onUpdateDealer,
 }: DealerProfilePageProps) {
   const { dealerId } = useParams();
   const dealer = dealers.find((row) => row.id === dealerId);
@@ -391,6 +415,19 @@ export function DealerProfilePage({
     mode: 'fifo' as 'fifo' | 'manual',
   });
   const [manual, setManual] = useState<Record<string, string>>({});
+  const [editingAgreement, setEditingAgreement] = useState(false);
+  const [agreementError, setAgreementError] = useState('');
+  const [agreementSaving, setAgreementSaving] = useState(false);
+  const [agreementForm, setAgreementForm] = useState({
+    dealerName: dealer?.name || '',
+    storeName: dealer?.storeName || dealer?.name || '',
+    platform: dealer?.platform || '',
+    currency: dealer?.currency || 'USD',
+    dealerSharePercentage: formatPercentInput(dealer?.dealerSharePercentage ?? 0.25),
+    companySharePercentage: formatPercentInput(dealer?.companySharePercentage ?? 0.75),
+    status: dealer?.status ?? 'active',
+    notes: dealer?.notes || '',
+  });
   const statementMonthRef = useRef<HTMLInputElement>(null);
   const dealerPaymentRate = useExchangeRateAutofill({
     currency: payForm.currency,
@@ -447,6 +484,69 @@ export function DealerProfilePage({
       },
     ]);
     setFlash('Statement created.');
+  };
+
+  const openAgreementEditor = () => {
+    setAgreementError('');
+    setAgreementForm({
+      dealerName: dealer.name,
+      storeName: dealer.storeName || dealer.name,
+      platform: dealer.platform || '',
+      currency: dealer.currency || 'USD',
+      dealerSharePercentage: formatPercentInput(dealer.dealerSharePercentage),
+      companySharePercentage: formatPercentInput(dealer.companySharePercentage),
+      status: dealer.status,
+      notes: dealer.notes || '',
+    });
+    setEditingAgreement(true);
+  };
+
+  const saveAgreement = async () => {
+    const dealerShare = Number(agreementForm.dealerSharePercentage);
+    const companyShare = Number(agreementForm.companySharePercentage);
+
+    if (!agreementForm.dealerName.trim() || !agreementForm.storeName.trim()) {
+      setAgreementError('Dealer name and store name are required.');
+      return;
+    }
+
+    if (
+      !Number.isFinite(dealerShare) ||
+      !Number.isFinite(companyShare) ||
+      dealerShare < 0 ||
+      dealerShare > 100 ||
+      companyShare < 0 ||
+      companyShare > 100
+    ) {
+      setAgreementError('Dealer share and company share must be numbers between 0 and 100.');
+      return;
+    }
+
+    if (Math.abs(dealerShare + companyShare - 100) > 0.001) {
+      setAgreementError('Dealer share and company share must add up to 100%.');
+      return;
+    }
+
+    setAgreementSaving(true);
+    setAgreementError('');
+
+    try {
+      await onUpdateDealer?.(dealer.id, {
+        name: agreementForm.dealerName.trim(),
+        storeName: agreementForm.storeName.trim(),
+        platform: agreementForm.platform.trim() || null,
+        currency: agreementForm.currency.trim() || 'USD',
+        dealerSharePercentage: dealerShare / 100,
+        companySharePercentage: companyShare / 100,
+        status: agreementForm.status,
+        notes: agreementForm.notes.trim() || null,
+      });
+      setEditingAgreement(false);
+    } catch (error) {
+      setAgreementError(error instanceof Error ? error.message : 'Dealer agreement could not be saved.');
+    } finally {
+      setAgreementSaving(false);
+    }
   };
 
   const submitPayment = async () => {
@@ -569,6 +669,44 @@ export function DealerProfilePage({
           helper={lastPayment ? lastPayment.paymentDate : 'No recorded dealer payment.'}
         />
       </div>
+
+      <SectionCard
+        title="Agreement"
+        subtitle="Dealer agreement terms used by live statement calculations."
+        action={
+          role === 'admin' ? (
+            <Button variant="secondary" onClick={openAgreementEditor}>
+              Edit Agreement
+            </Button>
+          ) : undefined
+        }
+      >
+        <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Dealer Share</p>
+            <p className="mt-1 text-lg font-semibold text-slate-950">{formatPercent(dealer.dealerSharePercentage)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Company Share</p>
+            <p className="mt-1 text-lg font-semibold text-slate-950">{formatPercent(dealer.companySharePercentage)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Platform</p>
+            <p className="mt-1 text-sm font-semibold text-slate-950">{dealer.platform || 'Not set'}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Default Currency</p>
+            <p className="mt-1 text-sm font-semibold text-slate-950">{dealer.currency || 'USD'}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Status</p>
+            <div className="mt-1"><StatusBadge status={dealer.status} /></div>
+          </div>
+        </div>
+        <div className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
+          Changing share rates may affect open statement calculations.
+        </div>
+      </SectionCard>
 
       <InfoCallout>{platformPayoutHelper}</InfoCallout>
 
@@ -845,6 +983,118 @@ export function DealerProfilePage({
           </tbody>
         </DataTable>
       </SectionCard>
+
+      {editingAgreement && role === 'admin' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
+          <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-xl">
+            <div className="border-b border-slate-200 px-5 py-4">
+              <h3 className="text-base font-semibold text-slate-950">Edit Dealer Agreement</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Changing share rates may affect open statement calculations.
+              </p>
+            </div>
+            <div className="grid gap-3 p-5 md:grid-cols-2">
+              <FormLabel label="Dealer name">
+                <input
+                  className="h-10 w-full px-3"
+                  value={agreementForm.dealerName}
+                  onChange={(event) => setAgreementForm({ ...agreementForm, dealerName: event.target.value })}
+                />
+              </FormLabel>
+              <FormLabel label="Store name">
+                <input
+                  className="h-10 w-full px-3"
+                  value={agreementForm.storeName}
+                  onChange={(event) => setAgreementForm({ ...agreementForm, storeName: event.target.value })}
+                />
+              </FormLabel>
+              <FormLabel label="Platform">
+                <input
+                  className="h-10 w-full px-3"
+                  value={agreementForm.platform}
+                  onChange={(event) => setAgreementForm({ ...agreementForm, platform: event.target.value })}
+                  placeholder="Etsy, Shopify, etc."
+                />
+              </FormLabel>
+              <FormLabel label="Currency">
+                <select
+                  className="h-10 w-full px-3"
+                  value={agreementForm.currency}
+                  onChange={(event) => setAgreementForm({ ...agreementForm, currency: event.target.value })}
+                >
+                  {currencyOptions.map((currency) => (
+                    <option key={currency} value={currency}>
+                      {currency}
+                    </option>
+                  ))}
+                </select>
+              </FormLabel>
+              <FormLabel label="Dealer share %">
+                <input
+                  className="h-10 w-full px-3"
+                  inputMode="decimal"
+                  value={agreementForm.dealerSharePercentage}
+                  onChange={(event) => {
+                    const nextDealerShare = event.target.value;
+                    const numeric = Number(nextDealerShare);
+                    setAgreementForm({
+                      ...agreementForm,
+                      dealerSharePercentage: nextDealerShare,
+                      companySharePercentage: Number.isFinite(numeric)
+                        ? formatPercentInput((100 - numeric) / 100)
+                        : agreementForm.companySharePercentage,
+                    });
+                  }}
+                />
+              </FormLabel>
+              <FormLabel label="Company share %">
+                <input
+                  className="h-10 w-full px-3"
+                  inputMode="decimal"
+                  value={agreementForm.companySharePercentage}
+                  onChange={(event) =>
+                    setAgreementForm({ ...agreementForm, companySharePercentage: event.target.value })
+                  }
+                />
+              </FormLabel>
+              <FormLabel label="Status">
+                <select
+                  className="h-10 w-full px-3"
+                  value={agreementForm.status}
+                  onChange={(event) =>
+                    setAgreementForm({ ...agreementForm, status: event.target.value as Dealer['status'] })
+                  }
+                >
+                  {dealerStatuses.map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </select>
+              </FormLabel>
+              <FormLabel label="Notes">
+                <textarea
+                  className="min-h-24 w-full px-3 py-2"
+                  value={agreementForm.notes}
+                  onChange={(event) => setAgreementForm({ ...agreementForm, notes: event.target.value })}
+                  placeholder="Internal agreement notes"
+                />
+              </FormLabel>
+            </div>
+            {agreementError && (
+              <div className="mx-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {agreementError}
+              </div>
+            )}
+            <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4">
+              <Button onClick={() => setEditingAgreement(false)}>Cancel</Button>
+              <Button variant="primary" onClick={saveAgreement}>
+                {agreementSaving ? 'Saving...' : 'Save Agreement'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </PageShell>
   );
 }

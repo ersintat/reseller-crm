@@ -18,6 +18,7 @@ export interface Dealer {
   storeName?: string;
   platform?: string | null;
   currency?: string;
+  notes?: string | null;
   supabaseId?: string;
 }
 export interface Statement { id: string; dealerId: string; month: string; status: StatementStatus; paidAmount: number; createdAt?: string; supabaseId?: string }

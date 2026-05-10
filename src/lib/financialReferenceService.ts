@@ -13,6 +13,7 @@ interface DealerRow {
   company_share_percentage: number | string;
   currency: string | null;
   status: Dealer['status'];
+  notes: string | null;
 }
 
 interface EmployeeRow {
@@ -50,6 +51,18 @@ type AssignmentUpdate = Pick<
   | 'status'
 >;
 
+export type DealerUpdate = Pick<
+  Dealer,
+  | 'name'
+  | 'storeName'
+  | 'platform'
+  | 'currency'
+  | 'dealerSharePercentage'
+  | 'companySharePercentage'
+  | 'status'
+  | 'notes'
+>;
+
 const normalizeName = (value: string) => value.trim().toLowerCase();
 
 const findMockDealer = (row: Pick<DealerRow, 'dealer_name' | 'store_name'>) =>
@@ -76,6 +89,7 @@ function mapDealer(row: DealerRow): Dealer {
     storeName: row.store_name,
     platform: row.platform,
     currency: row.currency ?? 'USD',
+    notes: row.notes,
     supabaseId: row.id,
   };
 }
@@ -99,7 +113,7 @@ export async function fetchFinancialDealers(): Promise<Dealer[]> {
   const { data, error } = await supabase
     .from('dealers')
     .select(
-      'id,dealer_name,store_name,platform,dealer_share_percentage,company_share_percentage,currency,status',
+      'id,dealer_name,store_name,platform,dealer_share_percentage,company_share_percentage,currency,status,notes',
     )
     .order('store_name', { ascending: true });
 
@@ -210,4 +224,31 @@ export async function updateEmployeeStoreAssignment(
     status: row.status,
     supabaseId: row.id,
   };
+}
+
+export async function updateFinancialDealer(dealerId: string, updates: DealerUpdate): Promise<Dealer> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+
+  const patch = {
+    dealer_name: updates.name,
+    store_name: updates.storeName || updates.name,
+    platform: updates.platform || null,
+    currency: updates.currency || 'USD',
+    dealer_share_percentage: updates.dealerSharePercentage * 100,
+    company_share_percentage: updates.companySharePercentage * 100,
+    status: updates.status,
+    notes: updates.notes || null,
+  };
+
+  const { data, error } = await supabase
+    .from('dealers')
+    .update(patch)
+    .eq('id', dealerId)
+    .select(
+      'id,dealer_name,store_name,platform,dealer_share_percentage,company_share_percentage,currency,status,notes',
+    )
+    .single();
+
+  if (error) throw error;
+  return mapDealer(data as DealerRow);
 }

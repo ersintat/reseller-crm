@@ -22,6 +22,6 @@ export function saveToStorage<T>(key: string, value: T) {
 }
 
 export function clearAppStorage() {
-  const keys = ['statements','transactions','dealerPayments','dealerPaymentAllocations','employeeCommissions','employeePayments','employeePaymentAllocations','employeeAssignments','role'];
+  const keys = ['dealers','statements','transactions','dealerPayments','dealerPaymentAllocations','employeeCommissions','employeePayments','employeePaymentAllocations','employeeAssignments','role'];
   keys.forEach((k) => localStorage.removeItem(storageKey(k)));
 }
