@@ -60,6 +60,7 @@ const transactionTypes: TransactionType[] = [
   'shipping_cost',
   'manual_adjustment',
 ];
+const employeePaymentCurrencyOptions: SupportedCurrency[] = ['TRY', 'USD', 'AUD'];
 const adjustmentScopes: ManualAdjustmentScope[] = [
   'dealer_receivable_only',
   'shareable_net',
@@ -1421,6 +1422,8 @@ export function EmployeeProfilePage({
   const [form, setForm] = useState({
     paymentDate: '2026-05-01',
     amount: '',
+    currency: 'TRY' as SupportedCurrency,
+    exchangeRateToUsd: '',
     description: '',
     mode: 'fifo' as 'fifo' | 'manual',
   });
@@ -1432,18 +1435,30 @@ export function EmployeeProfilePage({
 
   const openCommissions = getOpenCommissionsForEmployee(employee.id, commissions, allocations);
   const rows = getEmployeeCommissionLedgerRows(employee.id, commissions, payments);
+  const paymentUsdPreview = calculateUsdPreview(form.amount, form.currency, form.exchangeRateToUsd);
   let running = 0;
 
   const submit = async () => {
-    const amount = Number(form.amount);
-    if (amount <= 0) {
-      setFlash('Invalid payment amount.');
+    const originalAmount = parsePositiveNumber(form.amount);
+    const exchangeRateToUsd = getExchangeRateForSave(form.currency, form.exchangeRateToUsd);
+    if (!originalAmount) {
+      setFlash('Employee payment original amount must be positive.');
+      return;
+    }
+    if (!exchangeRateToUsd) {
+      setFlash('Exchange rate to USD must be greater than zero.');
+      return;
+    }
+    const usdAmount = roundUsdAmount(originalAmount * exchangeRateToUsd);
+    const openBalance = openCommissions.reduce((total, row) => total + row.remaining, 0);
+    if (usdAmount > openBalance + 0.001) {
+      setFlash('Payment USD equivalent cannot exceed open commission balance.');
       return;
     }
 
     let allocationRows: { commissionId: string; allocatedAmount: number }[] = [];
     if (form.mode === 'fifo') {
-      let left = amount;
+      let left = usdAmount;
       for (const open of [...openCommissions].sort((a, b) =>
         `${a.commission.periodYear}-${a.commission.periodMonth}`.localeCompare(
           `${b.commission.periodYear}-${b.commission.periodMonth}`,
@@ -1461,8 +1476,8 @@ export function EmployeeProfilePage({
         .filter(([, value]) => Number(value) > 0)
         .map(([commissionId, value]) => ({ commissionId, allocatedAmount: Number(value) }));
       const total = allocationRows.reduce((sum, row) => sum + row.allocatedAmount, 0);
-      if (Math.abs(total - amount) > 0.001) {
-        setFlash('Manual allocation must equal payment amount.');
+      if (Math.abs(total - usdAmount) > 0.001) {
+        setFlash('Manual allocation must equal the USD equivalent payment amount.');
         return;
       }
       for (const row of allocationRows) {
@@ -1482,7 +1497,11 @@ export function EmployeeProfilePage({
     if (onRecordEmployeePayment) {
       await onRecordEmployeePayment({
         employee,
-        amount,
+        amount: usdAmount,
+        originalAmount,
+        originalCurrency: form.currency,
+        exchangeRateToUsd,
+        usdAmount,
         paymentDate: form.paymentDate,
         description: form.description || 'Commission payment',
         allocationMode: form.mode,
@@ -1499,8 +1518,12 @@ export function EmployeeProfilePage({
       {
         id: paymentId,
         employeeId: employee.id,
-        amount,
-        currency: 'USD',
+        amount: usdAmount,
+        currency: form.currency,
+        originalAmount,
+        originalCurrency: form.currency,
+        exchangeRateToUsd,
+        usdAmount,
         paymentDate: form.paymentDate,
         description: form.description || 'Commission payment',
         allocationMode: form.mode,
@@ -1513,6 +1536,7 @@ export function EmployeeProfilePage({
       paymentId,
       commissionId: row.commissionId,
       allocatedAmount: row.allocatedAmount,
+      allocatedUsdAmount: row.allocatedAmount,
     }));
     setAllocations((previous) => [...previous, ...nextAllocations]);
     setCommissions((previous) =>
@@ -1562,7 +1586,7 @@ export function EmployeeProfilePage({
 
       <SectionCard title="Record Employee Payment" subtitle="Allocate commission payments with FIFO or manual controls.">
         <div className="space-y-4 p-5">
-          <div className="grid gap-3 md:grid-cols-4">
+          <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
             <FormLabel label="Payment date">
               <input
                 type="date"
@@ -1571,7 +1595,7 @@ export function EmployeeProfilePage({
                 onChange={(event) => setForm({ ...form, paymentDate: event.target.value })}
               />
             </FormLabel>
-            <FormLabel label="Amount">
+            <FormLabel label="Original payment amount">
               <input
                 type="text"
                 inputMode="decimal"
@@ -1579,6 +1603,29 @@ export function EmployeeProfilePage({
                 value={form.amount}
                 onChange={(event) => setForm({ ...form, amount: event.target.value })}
                 placeholder="0.00"
+              />
+            </FormLabel>
+            <FormLabel label="Payment currency">
+              <select
+                className="h-10 w-full px-3"
+                value={form.currency}
+                onChange={(event) => setForm(handleCurrencyChange(form, event.target.value as SupportedCurrency))}
+              >
+                {employeePaymentCurrencyOptions.map((currency) => (
+                  <option key={currency} value={currency}>
+                    {currency}
+                  </option>
+                ))}
+              </select>
+            </FormLabel>
+            <FormLabel label="Exchange rate to USD">
+              <input
+                type="text"
+                inputMode="decimal"
+                className="h-10 w-full px-3"
+                value={form.exchangeRateToUsd}
+                onChange={(event) => setForm({ ...form, exchangeRateToUsd: event.target.value })}
+                placeholder="0.0300"
               />
             </FormLabel>
             <FormLabel label="Description">
@@ -1600,10 +1647,20 @@ export function EmployeeProfilePage({
               </select>
             </FormLabel>
           </div>
+          <div className="grid gap-3 md:grid-cols-[minmax(0,240px)_1fr]">
+            <MoneyConversionPreview
+              amount={form.amount}
+              currency={form.currency}
+              exchangeRateToUsd={form.exchangeRateToUsd}
+            />
+            <InfoCallout>
+              Employee commissions are owed in USD. This payment will be allocated using its USD equivalent.
+            </InfoCallout>
+          </div>
 
           {form.mode === 'fifo' && (
             <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
-              FIFO applies payment to the oldest open commission rows first.
+              FIFO applies {formatUsd(paymentUsdPreview)} to the oldest open commission rows first.
             </div>
           )}
 
@@ -1646,6 +1703,7 @@ export function EmployeeProfilePage({
               <tr>
                 <th className="px-4 py-3">Date</th>
                 <th className="px-4 py-3">Type</th>
+                <th className="px-4 py-3">Details</th>
                 <th className="px-4 py-3 text-right">Amount</th>
                 <th className="px-4 py-3 text-right">Running</th>
               </tr>
@@ -1661,6 +1719,7 @@ export function EmployeeProfilePage({
                   >
                     <td className="px-4 py-3 text-slate-600">{row.date}</td>
                     <td className="px-4 py-3 font-medium text-slate-950">{row.kind}</td>
+                    <td className="px-4 py-3 text-slate-600">{row.description || '-'}</td>
                     <td className={isPayment ? 'px-4 py-3 text-right font-semibold text-emerald-700' : 'px-4 py-3 text-right font-semibold text-slate-950'}>
                       {formatUsd(row.amount)}
                     </td>
@@ -1952,6 +2011,7 @@ export function MyCommissionsPage({
           <tr>
             <th className="p-2 text-left">Date</th>
             <th>Type</th>
+            <th>Details</th>
             <th>Amount</th>
           </tr>
         </thead>
@@ -1960,6 +2020,7 @@ export function MyCommissionsPage({
             <tr key={`${row.date}-${index}`} className="border-t">
               <td className="p-2">{row.date}</td>
               <td>{row.kind}</td>
+              <td>{row.description || '-'}</td>
               <td>{formatUsd(row.amount)}</td>
             </tr>
           ))}

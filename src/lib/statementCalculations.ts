@@ -476,6 +476,7 @@ export const getEmployeeCommissionLedgerRows = (
     date: string;
     kind: string;
     amount: number;
+    description?: string;
     commission?: EmployeeCommission;
     payment?: EmployeePayment;
   }[] = [];
@@ -496,8 +497,9 @@ export const getEmployeeCommissionLedgerRows = (
     .forEach((payment) =>
       rows.push({
         date: payment.paymentDate,
-        kind: 'Payment',
+        kind: 'Payment Sent',
         amount: -getUsdAmount(payment),
+        description: `${formatOriginalMoney(payment)} - Applied ${formatUsdAmount(getUsdAmount(payment))}`,
         payment,
       }),
     );

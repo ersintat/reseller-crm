@@ -117,7 +117,16 @@ Milestone MC-2 adds transaction and dealer payment UI support for multi-currency
 5. Statement totals, dashboards, dealer open balances, and payment allocation logic remain USD/reporting-currency based.
 6. Employee payment TRY support remains deferred to MC-3.
 
-The next milestone should add employee payment original-currency UI support, then database RPCs for authoritative recalculation and transactional payment allocation.
+Milestone MC-3 adds employee payment original-currency UI support:
+
+1. Employee commissions remain earned, owed, and reported in USD.
+2. Admin employee payments can be recorded in `TRY`, `USD`, or `AUD`, with `TRY` as the default.
+3. The payment form captures original payment amount, payment currency, and exchange rate to USD.
+4. FIFO and manual commission payment allocation use the rounded USD equivalent against USD commission balances.
+5. Employee payment rows store original amount/currency/rate plus the USD equivalent in `amount` and `usd_amount`.
+6. Employee Profile and My Commissions ledgers show original payment context and applied USD equivalent.
+
+The next milestone should add database RPCs for authoritative recalculation and transactional payment allocation.
 
 ## Employee Auth + RLS QA Setup
 
