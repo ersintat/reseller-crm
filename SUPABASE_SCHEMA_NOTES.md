@@ -108,7 +108,16 @@ Milestone MC-1 adds the multi-currency storage foundation:
 7. The current UI still captures USD amounts. Manual original-currency and exchange-rate entry will be added in a later UI milestone.
 8. Calculation helpers use USD values through compatibility helpers and do not double-convert existing data.
 
-The next milestone should add database RPCs for authoritative recalculation and transactional payment allocation.
+Milestone MC-2 adds transaction and dealer payment UI support for multi-currency entry:
+
+1. Transaction forms capture original amount, `USD`/`TRY`/`AUD`, and exchange rate to USD.
+2. Dealer payment forms capture original payment amount, payment currency, and exchange rate to USD.
+3. USD equivalents are rounded to two decimals and stored in both `amount` and `usd_amount` for compatibility.
+4. Transaction and dealer payment displays show original currency, exchange rate, and applied USD equivalent.
+5. Statement totals, dashboards, dealer open balances, and payment allocation logic remain USD/reporting-currency based.
+6. Employee payment TRY support remains deferred to MC-3.
+
+The next milestone should add employee payment original-currency UI support, then database RPCs for authoritative recalculation and transactional payment allocation.
 
 ## Employee Auth + RLS QA Setup
 

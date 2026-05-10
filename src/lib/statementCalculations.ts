@@ -10,6 +10,7 @@ import {
   SettlementTransaction,
   Statement,
 } from '../types';
+import { formatOriginalMoney, formatUsdAmount } from './displayLabels';
 
 export interface StatementTotals {
   dealer_receivable_amount: number;
@@ -258,7 +259,9 @@ export function getDealerLedgerRows(
       rows.push({
         date: payment.paymentDate,
         kind: 'Payment Received from Dealer',
-        description: payment.description || 'Dealer payment',
+        description: `${payment.description || 'Dealer payment'} - ${formatOriginalMoney(payment)} - Applied ${formatUsdAmount(
+          getUsdAmount(payment),
+        )}`,
         amount: -getUsdAmount(payment),
       }),
     );

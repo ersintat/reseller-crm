@@ -106,7 +106,9 @@ USD remains the reporting and dashboard currency. Supabase money-moving rows now
 - `exchange_rate_to_usd`
 - `usd_amount`
 
-Existing `amount` fields remain USD equivalents during the transition. The service layer reads `usd_amount` when present and falls back to `amount`, so current statements, payments, commissions, and dashboard totals continue to behave as before. Manual exchange-rate entry and original-currency forms will be added in a later milestone.
+Existing `amount` fields remain USD equivalents during the transition. The service layer reads `usd_amount` when present and falls back to `amount`, so current statements, payments, commissions, and dashboard totals continue to behave as before.
+
+Transaction entry and dealer payment entry now support `USD`, `TRY`, and `AUD` original-currency input. Users enter the original amount, original currency, and exchange rate to USD; the app stores the rounded USD equivalent in both `amount` and `usd_amount` for compatibility. Statement totals, dashboards, and dealer balances still report in USD. Employee payment TRY support is intentionally deferred to MC-3.
 
 ## Demo persistence
 - The mock app state is persisted to `localStorage` using a versioned key prefix: `dealer-settlement-manager:v1`.

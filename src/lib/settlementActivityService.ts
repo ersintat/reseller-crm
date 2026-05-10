@@ -165,6 +165,7 @@ const toNumber = (value: number | string | null | undefined) => Number(value ?? 
 const toOptionalNumber = (value: number | string | null | undefined) =>
   value === null || value === undefined ? undefined : Number(value);
 const reportingCurrency = 'USD';
+const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 
 function normalizeMoneyFields(input: {
   amount: number;
@@ -173,7 +174,7 @@ function normalizeMoneyFields(input: {
   exchangeRateToUsd?: number;
   usdAmount?: number;
 }) {
-  const usdAmount = input.usdAmount ?? input.amount;
+  const usdAmount = roundMoney(input.usdAmount ?? input.amount);
   return {
     usdAmount,
     originalAmount: input.originalAmount ?? input.amount,

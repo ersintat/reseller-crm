@@ -41,7 +41,17 @@ import { PageShell } from './Shared';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { Button, DataTable, EmptyState, SectionCard } from '../components/ui/Primitives';
 import type { RecordDealerPaymentInput, RecordEmployeePaymentInput } from '../lib/settlementActivityService';
-import { formatTransactionType, platformPayoutHelper } from '../lib/displayLabels';
+import {
+  currencyOptions,
+  formatCurrencyAmount,
+  formatExchangeRate,
+  formatOriginalMoney,
+  formatTransactionType,
+  formatUsdAmount,
+  roundUsdAmount,
+  platformPayoutHelper,
+  type SupportedCurrency,
+} from '../lib/displayLabels';
 
 const transactionTypes: TransactionType[] = [
   'bank_payout',
@@ -56,6 +66,52 @@ const adjustmentScopes: ManualAdjustmentScope[] = [
   'employee_commission_base',
 ];
 const adjustmentDirections: ManualAdjustmentDirection[] = ['increase', 'decrease'];
+
+function parsePositiveNumber(value: string) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function getExchangeRateForSave(currency: SupportedCurrency, value: string) {
+  if (currency === 'USD' && value.trim() === '') return 1;
+  return parsePositiveNumber(value);
+}
+
+function calculateUsdPreview(amountValue: string, currency: SupportedCurrency, rateValue: string) {
+  const originalAmount = parsePositiveNumber(amountValue);
+  const exchangeRate = getExchangeRateForSave(currency, rateValue);
+  if (!originalAmount || !exchangeRate) return 0;
+  return roundUsdAmount(originalAmount * exchangeRate);
+}
+
+function handleCurrencyChange<T extends { currency: SupportedCurrency; exchangeRateToUsd: string }>(
+  state: T,
+  currency: SupportedCurrency,
+): T {
+  return {
+    ...state,
+    currency,
+    exchangeRateToUsd: currency === 'USD' ? '1' : state.currency === 'USD' ? '' : state.exchangeRateToUsd,
+  };
+}
+
+function MoneyConversionPreview({
+  amount,
+  currency,
+  exchangeRateToUsd,
+}: {
+  amount: string;
+  currency: SupportedCurrency;
+  exchangeRateToUsd: string;
+}) {
+  const usdAmount = calculateUsdPreview(amount, currency, exchangeRateToUsd);
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600">
+      <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">USD Equivalent</span>
+      <p className="mt-1 text-base font-semibold text-slate-950">{formatUsdAmount(usdAmount)}</p>
+    </div>
+  );
+}
 function SummaryCard({ label, value, helper }: { label: string; value: string; helper?: string }) {
   return (
     <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -138,6 +194,39 @@ function StatementBreakdown({ statement, dealer, transactions, allocations }: {
   );
 }
 
+function OriginalCurrencySummary({ transactions }: { transactions: SettlementTransaction[] }) {
+  const grouped = transactions
+    .filter((transaction) => transaction.status === 'confirmed')
+    .reduce<Record<string, number>>((summary, transaction) => {
+      const currency = transaction.originalCurrency ?? 'USD';
+      summary[currency] = (summary[currency] ?? 0) + (transaction.originalAmount ?? transaction.amount);
+      return summary;
+    }, {});
+  const rows = Object.entries(grouped).sort(([currencyA], [currencyB]) => currencyA.localeCompare(currencyB));
+
+  return (
+    <SectionCard
+      title="Original Currency Summary"
+      subtitle="USD statement totals are calculated from converted transaction amounts."
+    >
+      {rows.length === 0 ? (
+        <EmptyState title="No confirmed original-currency transactions yet." />
+      ) : (
+        <div className="grid gap-3 p-5 sm:grid-cols-3">
+          {rows.map(([currency, amount]) => (
+            <div key={currency} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{currency}</p>
+              <p className="mt-1 text-lg font-semibold text-slate-950">
+                {formatCurrencyAmount(amount, currency)}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
 interface DealerProfilePageProps {
   role: Role;
   assignedStoreIds: string[];
@@ -186,6 +275,8 @@ export function DealerProfilePage({
   const [payForm, setPayForm] = useState({
     paymentDate: '2026-05-01',
     amount: '',
+    currency: 'USD' as SupportedCurrency,
+    exchangeRateToUsd: '1',
     description: '',
     mode: 'fifo' as 'fifo' | 'manual',
   });
@@ -214,6 +305,7 @@ export function DealerProfilePage({
   const lastPayment = payments
     .filter((payment) => payment.dealerId === dealer.id)
     .sort((a, b) => b.paymentDate.localeCompare(a.paymentDate))[0];
+  const paymentUsdPreview = calculateUsdPreview(payForm.amount, payForm.currency, payForm.exchangeRateToUsd);
   let running = 0;
 
   const createStatement = () => {
@@ -245,22 +337,28 @@ export function DealerProfilePage({
   const submitPayment = async () => {
     if (role !== 'admin') return;
 
-    const amount = Number(payForm.amount);
-    if (!amount || amount <= 0) {
-      setFlash('Payment amount must be positive.');
+    const originalAmount = parsePositiveNumber(payForm.amount);
+    const exchangeRateToUsd = getExchangeRateForSave(payForm.currency, payForm.exchangeRateToUsd);
+    if (!originalAmount) {
+      setFlash('Payment original amount must be positive.');
       return;
     }
+    if (!exchangeRateToUsd) {
+      setFlash('Exchange rate to USD must be greater than zero.');
+      return;
+    }
+    const usdAmount = roundUsdAmount(originalAmount * exchangeRateToUsd);
 
     let rows: { statementId: string; allocatedAmount: number }[] = [];
     if (payForm.mode === 'fifo') {
-      rows = allocateDealerPaymentFIFO({ dealerId: dealer.id, amount, openStatements });
+      rows = allocateDealerPaymentFIFO({ dealerId: dealer.id, amount: usdAmount, openStatements });
     } else {
       rows = Object.entries(manual)
         .filter(([, value]) => Number(value) > 0)
         .map(([statementId, value]) => ({ statementId, allocatedAmount: Number(value) }));
       const total = rows.reduce((sum, row) => sum + row.allocatedAmount, 0);
-      if (Math.abs(total - amount) > 0.001) {
-        setFlash('Manual allocation must equal payment amount.');
+      if (Math.abs(total - usdAmount) > 0.001) {
+        setFlash('Manual allocation must equal the USD equivalent payment amount.');
         return;
       }
       for (const row of rows) {
@@ -285,8 +383,12 @@ export function DealerProfilePage({
     const payment: DealerPayment = {
       id: paymentId,
       dealerId: dealer.id,
-      amount,
-      currency: 'USD',
+      amount: usdAmount,
+      currency: payForm.currency,
+      originalAmount,
+      originalCurrency: payForm.currency,
+      exchangeRateToUsd,
+      usdAmount,
       paymentDate: payForm.paymentDate,
       description: payForm.description || 'Dealer payment',
       allocationMode: payForm.mode,
@@ -298,12 +400,17 @@ export function DealerProfilePage({
       paymentId,
       statementId: row.statementId,
       allocatedAmount: row.allocatedAmount,
+      allocatedUsdAmount: row.allocatedAmount,
     }));
 
     if (onRecordDealerPayment) {
       await onRecordDealerPayment({
         dealer,
-        amount,
+        amount: usdAmount,
+        originalAmount,
+        originalCurrency: payForm.currency,
+        exchangeRateToUsd,
+        usdAmount,
         paymentDate: payForm.paymentDate,
         description: payForm.description || 'Dealer payment',
         allocationMode: payForm.mode,
@@ -375,7 +482,7 @@ export function DealerProfilePage({
             subtitle="Allocate dealer payments with FIFO or manual statement allocation."
           >
             <div className="space-y-4 p-5">
-              <div className="grid gap-3 md:grid-cols-4">
+              <div className="grid gap-3 md:grid-cols-6">
                 <FormLabel label="Payment date">
                   <input
                     type="date"
@@ -384,7 +491,7 @@ export function DealerProfilePage({
                     onChange={(event) => setPayForm({ ...payForm, paymentDate: event.target.value })}
                   />
                 </FormLabel>
-                <FormLabel label="Amount">
+                <FormLabel label="Original payment amount">
                   <input
                     placeholder="0.00"
                     type="text"
@@ -392,6 +499,31 @@ export function DealerProfilePage({
                     className="h-10 w-full px-3"
                     value={payForm.amount}
                     onChange={(event) => setPayForm({ ...payForm, amount: event.target.value })}
+                  />
+                </FormLabel>
+                <FormLabel label="Payment currency">
+                  <select
+                    className="h-10 w-full px-3"
+                    value={payForm.currency}
+                    onChange={(event) =>
+                      setPayForm(handleCurrencyChange(payForm, event.target.value as SupportedCurrency))
+                    }
+                  >
+                    {currencyOptions.map((currency) => (
+                      <option key={currency} value={currency}>
+                        {currency}
+                      </option>
+                    ))}
+                  </select>
+                </FormLabel>
+                <FormLabel label="Exchange rate to USD">
+                  <input
+                    placeholder="1.0000"
+                    type="text"
+                    inputMode="decimal"
+                    className="h-10 w-full px-3"
+                    value={payForm.exchangeRateToUsd}
+                    onChange={(event) => setPayForm({ ...payForm, exchangeRateToUsd: event.target.value })}
                   />
                 </FormLabel>
                 <FormLabel label="Description">
@@ -413,13 +545,21 @@ export function DealerProfilePage({
                   </select>
                 </FormLabel>
               </div>
+              <MoneyConversionPreview
+                amount={payForm.amount}
+                currency={payForm.currency}
+                exchangeRateToUsd={payForm.exchangeRateToUsd}
+              />
+              <p className="text-xs text-slate-500">
+                Allocations are applied against USD statement balances using the USD equivalent.
+              </p>
 
               {payForm.mode === 'fifo' && (
                 <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
                   <span className="font-semibold text-slate-700">FIFO preview: </span>
                   {allocateDealerPaymentFIFO({
                     dealerId: dealer.id,
-                    amount: Number(payForm.amount) || 0,
+                    amount: paymentUsdPreview,
                     openStatements,
                   })
                     .map((row) => `${row.statementId}: ${formatUsd(row.allocatedAmount)}`)
@@ -608,6 +748,10 @@ interface StatementDetailPageProps {
       date: string;
       type: TransactionType;
       amount: number;
+      originalAmount?: number;
+      originalCurrency?: string;
+      exchangeRateToUsd?: number;
+      usdAmount?: number;
       description?: string;
       orderCode?: string;
       adjustmentScope?: ManualAdjustmentScope;
@@ -638,6 +782,8 @@ export function StatementDetailPage({
     date: '2026-04-15',
     type: 'bank_payout' as TransactionType,
     amount: '',
+    currency: 'USD' as SupportedCurrency,
+    exchangeRateToUsd: '1',
     description: '',
     orderCode: '',
     adjustmentScope: 'shareable_net' as ManualAdjustmentScope,
@@ -655,18 +801,27 @@ export function StatementDetailPage({
   const totals = calculateStatementTotals(statement, transactions, dealer, paid);
   const statementAllocations = allocations.filter((allocation) => allocation.statementId === statement.id);
   const commissionPreviews = getCommissionPreviewsForStatement(statement, transactions, dealer, employees);
-
   const addTransaction = () => {
-    const amount = Number(form.amount);
-    if (!form.date || !form.type || amount <= 0) {
-      setFlash('Error: required fields and positive amount are required.');
+    const originalAmount = parsePositiveNumber(form.amount);
+    const exchangeRateToUsd = getExchangeRateForSave(form.currency, form.exchangeRateToUsd);
+    if (!form.date || !form.type || !originalAmount) {
+      setFlash('Error: required fields and positive original amount are required.');
       return;
     }
+    if (!exchangeRateToUsd) {
+      setFlash('Exchange rate to USD must be greater than zero.');
+      return;
+    }
+    const usdAmount = roundUsdAmount(originalAmount * exchangeRateToUsd);
 
     const input = {
       date: form.date,
       type: form.type,
-      amount,
+      amount: usdAmount,
+      originalAmount,
+      originalCurrency: form.currency,
+      exchangeRateToUsd,
+      usdAmount,
       description: form.description,
       orderCode: form.orderCode || undefined,
       adjustmentScope: form.type === 'manual_adjustment' ? form.adjustmentScope : undefined,
@@ -688,7 +843,11 @@ export function StatementDetailPage({
         statementId: statement.id,
         date: input.date,
         type: input.type,
-        amount,
+        amount: usdAmount,
+        originalAmount,
+        originalCurrency: form.currency,
+        exchangeRateToUsd,
+        usdAmount,
         status,
         description: input.description,
         orderCode: input.orderCode,
@@ -726,6 +885,7 @@ export function StatementDetailPage({
       )}
 
       <StatementBreakdown statement={statement} dealer={dealer} transactions={transactions} allocations={allocations} />
+      <OriginalCurrencySummary transactions={txns} />
 
       {canAddTransaction ? (
         <SectionCard
@@ -740,7 +900,7 @@ export function StatementDetailPage({
                 Admin-created transactions are confirmed immediately.
               </div>
             )}
-            <div className="grid gap-3 md:grid-cols-4">
+            <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
               <FormLabel label="Date">
                 <input
                   type="date"
@@ -764,7 +924,7 @@ export function StatementDetailPage({
                   ))}
                 </select>
               </FormLabel>
-              <FormLabel label="Amount">
+              <FormLabel label="Original amount">
                 <input
                   type="text"
                   inputMode="decimal"
@@ -772,6 +932,32 @@ export function StatementDetailPage({
                   onChange={(event) => setForm({ ...form, amount: event.target.value })}
                   className="h-10 w-full px-3"
                   placeholder="0.00"
+                />
+              </FormLabel>
+              <FormLabel label="Currency">
+                <select
+                  aria-label="Transaction currency"
+                  value={form.currency}
+                  onChange={(event) =>
+                    setForm(handleCurrencyChange(form, event.target.value as SupportedCurrency))
+                  }
+                  className="h-10 w-full px-3"
+                >
+                  {currencyOptions.map((currency) => (
+                    <option key={currency} value={currency}>
+                      {currency}
+                    </option>
+                  ))}
+                </select>
+              </FormLabel>
+              <FormLabel label="Exchange rate to USD">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={form.exchangeRateToUsd}
+                  onChange={(event) => setForm({ ...form, exchangeRateToUsd: event.target.value })}
+                  className="h-10 w-full px-3"
+                  placeholder="1.0000"
                 />
               </FormLabel>
               <FormLabel label="Description">
@@ -823,6 +1009,16 @@ export function StatementDetailPage({
                 </>
               )}
             </div>
+            <div className="grid gap-3 md:grid-cols-[minmax(0,240px)_1fr]">
+              <MoneyConversionPreview
+                amount={form.amount}
+                currency={form.currency}
+                exchangeRateToUsd={form.exchangeRateToUsd}
+              />
+              <InfoCallout>
+                Statement totals use the USD equivalent. Keep the exchange rate used for this transaction date.
+              </InfoCallout>
+            </div>
             <Button variant="primary" onClick={addTransaction}>
               Add Transaction
             </Button>
@@ -837,7 +1033,9 @@ export function StatementDetailPage({
               <th className="px-4 py-3">Date</th>
               <th className="px-4 py-3">Type</th>
               <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3 text-right">Amount</th>
+              <th className="px-4 py-3 text-right">Original</th>
+              <th className="px-4 py-3 text-right">Rate</th>
+              <th className="px-4 py-3 text-right">USD Amount</th>
               <th className="px-4 py-3">Order</th>
               <th className="px-4 py-3">Description</th>
             </tr>
@@ -859,7 +1057,9 @@ export function StatementDetailPage({
                 <td className="px-4 py-3">
                   <StatusBadge status={transaction.status} />
                 </td>
-                <td className="px-4 py-3 text-right font-semibold">{formatUsd(transaction.amount)}</td>
+                <td className="px-4 py-3 text-right font-semibold">{formatOriginalMoney(transaction)}</td>
+                <td className="px-4 py-3 text-right">{formatExchangeRate(transaction.exchangeRateToUsd)}</td>
+                <td className="px-4 py-3 text-right font-semibold">{formatUsd(transaction.usdAmount ?? transaction.amount)}</td>
                 <td className="px-4 py-3">{transaction.orderCode || '-'}</td>
                 <td className="px-4 py-3">{transaction.description || '-'}</td>
               </tr>
@@ -887,7 +1087,9 @@ export function StatementDetailPage({
               {statementAllocations.map((allocation) => (
                 <div key={allocation.id} className="flex items-center justify-between py-3">
                   <span className="font-medium text-slate-900">{allocation.paymentId}</span>
-                  <span className="font-semibold text-emerald-700">{formatUsd(allocation.allocatedAmount)}</span>
+                  <span className="font-semibold text-emerald-700">
+                    {formatUsd(allocation.allocatedUsdAmount ?? allocation.allocatedAmount)}
+                  </span>
                 </div>
               ))}
             </div>
@@ -1043,7 +1245,9 @@ export function TransactionsPage({
                 <th className="px-4 py-3">Date</th>
                 <th className="px-4 py-3">Dealer</th>
                 <th className="px-4 py-3">Type</th>
-                <th className="px-4 py-3 text-right">Amount</th>
+                <th className="px-4 py-3 text-right">Original</th>
+                <th className="px-4 py-3 text-right">Rate</th>
+                <th className="px-4 py-3 text-right">USD Amount</th>
                 <th className="px-4 py-3">Submitted By</th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
@@ -1054,7 +1258,9 @@ export function TransactionsPage({
                   <td className="px-4 py-3">{transaction.date}</td>
                   <td className="px-4 py-3 font-medium text-slate-950">{dealers.find((dealer) => dealer.id === transaction.dealerId)?.name}</td>
                   <td className="px-4 py-3">{formatTransactionType(transaction.type)}</td>
-                  <td className="px-4 py-3 text-right font-semibold">{formatUsd(transaction.amount)}</td>
+                  <td className="px-4 py-3 text-right font-semibold">{formatOriginalMoney(transaction)}</td>
+                  <td className="px-4 py-3 text-right">{formatExchangeRate(transaction.exchangeRateToUsd)}</td>
+                  <td className="px-4 py-3 text-right font-semibold">{formatUsd(transaction.usdAmount ?? transaction.amount)}</td>
                   <td className="px-4 py-3">{transaction.createdByRole || 'admin'}</td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex justify-end gap-2">
@@ -1083,7 +1289,9 @@ export function TransactionsPage({
                 <th className="px-4 py-3">Dealer</th>
                 <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Amount</th>
+                <th className="px-4 py-3 text-right">Original</th>
+                <th className="px-4 py-3 text-right">Rate</th>
+                <th className="px-4 py-3 text-right">USD Amount</th>
                 <th className="px-4 py-3">Order</th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
@@ -1105,7 +1313,9 @@ export function TransactionsPage({
                   <td className="px-4 py-3">
                     <StatusBadge status={transaction.status} />
                   </td>
-                  <td className="px-4 py-3 text-right font-semibold">{formatUsd(transaction.amount)}</td>
+                  <td className="px-4 py-3 text-right font-semibold">{formatOriginalMoney(transaction)}</td>
+                  <td className="px-4 py-3 text-right">{formatExchangeRate(transaction.exchangeRateToUsd)}</td>
+                  <td className="px-4 py-3 text-right font-semibold">{formatUsd(transaction.usdAmount ?? transaction.amount)}</td>
                   <td className="px-4 py-3">{transaction.orderCode || '-'}</td>
                   <td className="px-4 py-3 text-right">
                     {role === 'admin' && transaction.status === 'pending_review' && (

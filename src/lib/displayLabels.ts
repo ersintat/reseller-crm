@@ -1,4 +1,4 @@
-import { TransactionType } from '../types';
+import { MoneyInUsd, TransactionType } from '../types';
 
 const transactionTypeLabels: Record<TransactionType, string> = {
   bank_payout: 'Platform Payout to Dealer Bank',
@@ -14,3 +14,40 @@ export const platformPayoutHelper =
 export function formatTransactionType(type: TransactionType) {
   return transactionTypeLabels[type] ?? type;
 }
+
+export const currencyOptions = ['USD', 'TRY', 'AUD'] as const;
+export type SupportedCurrency = (typeof currencyOptions)[number];
+
+const decimalFormatter = new Intl.NumberFormat('en-US', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+const usdFormatter = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+});
+
+export const roundUsdAmount = (value: number) =>
+  Math.round((value + Number.EPSILON) * 100) / 100;
+
+export const formatCurrencyAmount = (amount: number, currency: string) =>
+  `${currency} ${decimalFormatter.format(amount)}`;
+
+export const formatUsdAmount = (amount: number) => usdFormatter.format(amount);
+
+export const getMoneyOriginalAmount = (row: MoneyInUsd) => row.originalAmount ?? row.amount;
+
+export const getMoneyOriginalCurrency = (row: MoneyInUsd) => row.originalCurrency ?? 'USD';
+
+export const getMoneyUsdAmount = (row: MoneyInUsd) => row.usdAmount ?? row.amount;
+
+export const formatExchangeRate = (rate?: number) => Number(rate ?? 1).toFixed(4);
+
+export const formatOriginalMoney = (row: MoneyInUsd) =>
+  formatCurrencyAmount(getMoneyOriginalAmount(row), getMoneyOriginalCurrency(row));
+
+export const describeMoneyConversion = (row: MoneyInUsd) =>
+  `${formatOriginalMoney(row)} @ ${formatExchangeRate(row.exchangeRateToUsd)} -> ${formatUsdAmount(
+    getMoneyUsdAmount(row),
+  )}`;
