@@ -126,6 +126,14 @@ Milestone MC-3 adds employee payment original-currency UI support:
 5. Employee payment rows store original amount/currency/rate plus the USD equivalent in `amount` and `usd_amount`.
 6. Employee Profile and My Commissions ledgers show original payment context and applied USD equivalent.
 
+Exchange-rate lookup support:
+
+1. Transaction, dealer payment, and employee payment forms auto-fill exchange rates from Frankfurter for non-USD currencies.
+2. USD remains fixed at rate `1`.
+3. Lookup uses the selected form date and stores only the final entered `exchange_rate_to_usd` value on save.
+4. Users can manually override fetched rates, and historical saved rows are never recalculated automatically when market rates change later.
+5. Failed lookups leave the field editable with a manual-entry warning.
+
 The next milestone should add database RPCs for authoritative recalculation and transactional payment allocation.
 
 ## Employee Auth + RLS QA Setup

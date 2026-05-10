@@ -1,5 +1,5 @@
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
-import { useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import {
   Assignment,
   AssignmentStatus,
@@ -52,6 +52,7 @@ import {
   platformPayoutHelper,
   type SupportedCurrency,
 } from '../lib/displayLabels';
+import { fetchExchangeRateToUsd } from '../lib/exchangeRateService';
 
 const transactionTypes: TransactionType[] = [
   'bank_payout',
@@ -76,6 +77,10 @@ function parsePositiveNumber(value: string) {
 function getExchangeRateForSave(currency: SupportedCurrency, value: string) {
   if (currency === 'USD' && value.trim() === '') return 1;
   return parsePositiveNumber(value);
+}
+
+function formatRateForInput(rate: number) {
+  return rate.toFixed(8).replace(/0+$/, '').replace(/\.$/, '');
 }
 
 function calculateUsdPreview(amountValue: string, currency: SupportedCurrency, rateValue: string) {
@@ -112,6 +117,110 @@ function MoneyConversionPreview({
       <p className="mt-1 text-base font-semibold text-slate-950">{formatUsdAmount(usdAmount)}</p>
     </div>
   );
+}
+
+interface ExchangeRateLookupState {
+  loading: boolean;
+  error: string;
+  sourceDate: string;
+  source: string;
+}
+
+function useExchangeRateAutofill({
+  currency,
+  date,
+  setExchangeRateToUsd,
+}: {
+  currency: SupportedCurrency;
+  date: string;
+  setExchangeRateToUsd: (value: string) => void;
+}) {
+  const [lookup, setLookup] = useState<ExchangeRateLookupState>({
+    loading: false,
+    error: '',
+    sourceDate: '',
+    source: '',
+  });
+  const manualOverrideRef = useRef(false);
+  const setRateRef = useRef(setExchangeRateToUsd);
+
+  useEffect(() => {
+    setRateRef.current = setExchangeRateToUsd;
+  }, [setExchangeRateToUsd]);
+
+  useEffect(() => {
+    let cancelled = false;
+    manualOverrideRef.current = false;
+
+    if (currency === 'USD') {
+      setRateRef.current('1');
+      setLookup({ loading: false, error: '', sourceDate: date, source: 'USD' });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (!date) {
+      setLookup({ loading: false, error: 'Select a date before fetching a rate.', sourceDate: '', source: '' });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setLookup({ loading: true, error: '', sourceDate: '', source: 'Frankfurter' });
+    void fetchExchangeRateToUsd(currency, date)
+      .then((result) => {
+        if (cancelled) return;
+        if (!manualOverrideRef.current) {
+          setRateRef.current(formatRateForInput(result.rate));
+        }
+        setLookup({
+          loading: false,
+          error: '',
+          sourceDate: result.sourceDate,
+          source: result.source,
+        });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLookup({
+          loading: false,
+          error: 'Could not fetch rate. Please enter manually.',
+          sourceDate: '',
+          source: 'Frankfurter',
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currency, date]);
+
+  const markManualOverride = () => {
+    manualOverrideRef.current = true;
+  };
+
+  return { lookup, markManualOverride };
+}
+
+function ExchangeRateLookupStatus({ lookup }: { lookup: ExchangeRateLookupState }) {
+  if (lookup.loading) {
+    return <p className="text-xs text-slate-500">Fetching Frankfurter exchange rate...</p>;
+  }
+
+  if (lookup.error) {
+    return <p className="text-xs font-medium text-amber-700">{lookup.error}</p>;
+  }
+
+  if (lookup.sourceDate) {
+    return (
+      <p className="text-xs text-slate-500">
+        Rate source: {lookup.source} {lookup.sourceDate}. You can override it manually.
+      </p>
+    );
+  }
+
+  return null;
 }
 function SummaryCard({ label, value, helper }: { label: string; value: string; helper?: string }) {
   return (
@@ -283,6 +392,11 @@ export function DealerProfilePage({
   });
   const [manual, setManual] = useState<Record<string, string>>({});
   const statementMonthRef = useRef<HTMLInputElement>(null);
+  const dealerPaymentRate = useExchangeRateAutofill({
+    currency: payForm.currency,
+    date: payForm.paymentDate,
+    setExchangeRateToUsd: (value) => setPayForm((previous) => ({ ...previous, exchangeRateToUsd: value })),
+  });
 
   if (!dealer) return <PageShell title="Dealer Profile" subtitle="Dealer not found" />;
   if (role === 'employee' && !assignedStoreIds.includes(dealer.storeId)) return <Navigate to="/dealers" replace />;
@@ -524,7 +638,10 @@ export function DealerProfilePage({
                     inputMode="decimal"
                     className="h-10 w-full px-3"
                     value={payForm.exchangeRateToUsd}
-                    onChange={(event) => setPayForm({ ...payForm, exchangeRateToUsd: event.target.value })}
+                    onChange={(event) => {
+                      dealerPaymentRate.markManualOverride();
+                      setPayForm({ ...payForm, exchangeRateToUsd: event.target.value });
+                    }}
                   />
                 </FormLabel>
                 <FormLabel label="Description">
@@ -554,6 +671,7 @@ export function DealerProfilePage({
               <p className="text-xs text-slate-500">
                 Allocations are applied against USD statement balances using the USD equivalent.
               </p>
+              <ExchangeRateLookupStatus lookup={dealerPaymentRate.lookup} />
 
               {payForm.mode === 'fifo' && (
                 <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
@@ -790,6 +908,11 @@ export function StatementDetailPage({
     adjustmentScope: 'shareable_net' as ManualAdjustmentScope,
     adjustmentDirection: 'increase' as ManualAdjustmentDirection,
   });
+  const transactionRate = useExchangeRateAutofill({
+    currency: form.currency,
+    date: form.date,
+    setExchangeRateToUsd: (value) => setForm((previous) => ({ ...previous, exchangeRateToUsd: value })),
+  });
 
   if (!statement) return <PageShell title="Statement Detail" subtitle="Statement not found" />;
   const dealer = dealers.find((row) => row.id === statement.dealerId);
@@ -956,7 +1079,10 @@ export function StatementDetailPage({
                   type="text"
                   inputMode="decimal"
                   value={form.exchangeRateToUsd}
-                  onChange={(event) => setForm({ ...form, exchangeRateToUsd: event.target.value })}
+                  onChange={(event) => {
+                    transactionRate.markManualOverride();
+                    setForm({ ...form, exchangeRateToUsd: event.target.value });
+                  }}
                   className="h-10 w-full px-3"
                   placeholder="1.0000"
                 />
@@ -1020,6 +1146,7 @@ export function StatementDetailPage({
                 Statement totals use the USD equivalent. Keep the exchange rate used for this transaction date.
               </InfoCallout>
             </div>
+            <ExchangeRateLookupStatus lookup={transactionRate.lookup} />
             <Button variant="primary" onClick={addTransaction}>
               Add Transaction
             </Button>
@@ -1428,6 +1555,11 @@ export function EmployeeProfilePage({
     mode: 'fifo' as 'fifo' | 'manual',
   });
   const [manual, setManual] = useState<Record<string, string>>({});
+  const employeePaymentRate = useExchangeRateAutofill({
+    currency: form.currency,
+    date: form.paymentDate,
+    setExchangeRateToUsd: (value) => setForm((previous) => ({ ...previous, exchangeRateToUsd: value })),
+  });
 
   if (role !== 'admin') return <Navigate to="/" replace />;
   const employee = employees.find((row) => row.id === employeeId);
@@ -1624,7 +1756,10 @@ export function EmployeeProfilePage({
                 inputMode="decimal"
                 className="h-10 w-full px-3"
                 value={form.exchangeRateToUsd}
-                onChange={(event) => setForm({ ...form, exchangeRateToUsd: event.target.value })}
+                onChange={(event) => {
+                  employeePaymentRate.markManualOverride();
+                  setForm({ ...form, exchangeRateToUsd: event.target.value });
+                }}
                 placeholder="0.0300"
               />
             </FormLabel>
@@ -1657,6 +1792,7 @@ export function EmployeeProfilePage({
               Employee commissions are owed in USD. This payment will be allocated using its USD equivalent.
             </InfoCallout>
           </div>
+          <ExchangeRateLookupStatus lookup={employeePaymentRate.lookup} />
 
           {form.mode === 'fifo' && (
             <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">

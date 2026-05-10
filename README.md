@@ -110,6 +110,8 @@ Existing `amount` fields remain USD equivalents during the transition. The servi
 
 Transaction entry, dealer payment entry, and employee payment entry now support original-currency input. Transactions and dealer payments support `USD`, `TRY`, and `AUD`; employee payments default to `TRY` and also support `USD` and `AUD`. Users enter the original amount, original currency, and exchange rate to USD; the app stores the rounded USD equivalent in both `amount` and `usd_amount` for compatibility. Statement totals, dashboards, dealer balances, and employee commission balances still report in USD. Employee commissions are owed in USD, while employee payment ledgers show both the original payment currency and applied USD equivalent.
 
+Exchange rates can be auto-filled from the Frankfurter API using the selected form date and currency. USD uses a fixed rate of `1`; TRY and AUD attempt to fetch the historical rate to USD. The rate field always remains editable, and saved historical records keep the final captured exchange rate instead of updating automatically later.
+
 ## Demo persistence
 - The mock app state is persisted to `localStorage` using a versioned key prefix: `dealer-settlement-manager:v1`.
 - Persisted slices include statements, transactions, dealer payments/allocations, and employee commissions/payments/allocations.
