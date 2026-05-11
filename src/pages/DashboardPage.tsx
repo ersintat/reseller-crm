@@ -61,6 +61,18 @@ export function DashboardPage({
     const assignedDealerIds = dealers
       .filter((dealer) => assignedStoreIds.includes(dealer.storeId))
       .map((dealer) => dealer.id);
+    const myPendingOrderCosts = pendingOrderCosts.filter(
+      (cost) =>
+        assignedDealerIds.includes(cost.dealerId) &&
+        ['pending', 'partially_resolved'].includes(cost.status),
+    );
+    const myPendingCostRows = dealers
+      .filter((dealer) => assignedDealerIds.includes(dealer.id))
+      .map((dealer) => ({
+        dealer,
+        count: myPendingOrderCosts.filter((cost) => cost.dealerId === dealer.id).length,
+      }))
+      .filter((row) => row.count > 0);
     const myPendingTransactions = transactions.filter(
       (transaction) =>
         assignedDealerIds.includes(transaction.dealerId) &&
@@ -81,28 +93,66 @@ export function DashboardPage({
 
     return (
       <PageShell title="Dashboard" subtitle="My commission and review overview">
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-          <KpiCard
-            label="My Open Commission Balance"
-            value={formatUsd(getEmployeeOpenCommissionBalance(employee.id, employeeCommissions, employeePaymentAllocations))}
-            helper="Generated from assigned-store statements."
-          />
-          <KpiCard
-            label="My Current Month Commission"
-            value={formatUsd(getCurrentMonthEmployeeCommission(employee.id, employeeCommissions))}
-            helper="Current mock period: April 2026."
-          />
-          <KpiCard
-            label="Assigned Stores"
-            value={String(employee.assignments.length)}
-            helper={assignedStoreNames || 'No assigned stores.'}
-          />
-          <KpiCard
-            label="My Pending Transactions"
-            value={String(myPendingTransactions)}
-            helper="Pending rows do not affect totals until approved."
-            tone={myPendingTransactions > 0 ? 'amber' : 'slate'}
-          />
+        <div className="space-y-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            <KpiCard
+              label="My Open Commission Balance"
+              value={formatUsd(getEmployeeOpenCommissionBalance(employee.id, employeeCommissions, employeePaymentAllocations))}
+              helper="Generated from assigned-store statements."
+            />
+            <KpiCard
+              label="My Current Month Commission"
+              value={formatUsd(getCurrentMonthEmployeeCommission(employee.id, employeeCommissions))}
+              helper="Current mock period: April 2026."
+            />
+            <KpiCard
+              label="Assigned Stores"
+              value={String(employee.assignments.length)}
+              helper={assignedStoreNames || 'No assigned stores.'}
+            />
+            <KpiCard
+              label="My Pending Transactions"
+              value={String(myPendingTransactions)}
+              helper="Pending rows do not affect totals until approved."
+              tone={myPendingTransactions > 0 ? 'amber' : 'slate'}
+            />
+          </div>
+
+          <SectionCard
+            className={myPendingOrderCosts.length > 0 ? 'border-amber-200 bg-amber-50/30 shadow-amber-50' : ''}
+            title="My Pending Order Costs"
+            subtitle="Unresolved printing or shipping costs for stores you can view."
+          >
+            {myPendingCostRows.length === 0 ? (
+              <EmptyState title="No unresolved order costs for your assigned stores." />
+            ) : (
+              <DataTable>
+                <thead className="bg-amber-50/80 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Assigned Store</th>
+                    <th className="px-4 py-3 text-right">Pending Costs</th>
+                    <th className="px-4 py-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {myPendingCostRows.map((row) => (
+                    <tr key={row.dealer.id} className="border-t border-amber-100 bg-amber-50/40">
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-slate-950">{row.dealer.name}</p>
+                        <p className="text-xs text-slate-500">{row.dealer.storeName || row.dealer.storeId}</p>
+                      </td>
+                      <td className="px-4 py-3 text-right font-semibold text-amber-700">{row.count}</td>
+                      <td className="px-4 py-3 text-right">
+                        <Link className="rounded-lg px-2.5 py-1.5 text-indigoBrand font-medium hover:bg-indigo-50" to={`/dealers/${row.dealer.id}`}>
+                          Review Pending Costs
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </DataTable>
+            )}
+          </SectionCard>
         </div>
       </PageShell>
     );
