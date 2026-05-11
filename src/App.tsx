@@ -2,7 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { type SetStateAction, useEffect, useMemo, useRef, useState } from 'react';
 import { AppLayout } from './components/layout/AppLayout';
 import { dealers, employees, initialStatements, initialTransactions } from './data/mockData';
-import { Assignment, Dealer, DealerPayment, DealerPaymentAllocation, Employee, EmployeeCommission, EmployeePayment, EmployeePaymentAllocation, Role, SettlementTransaction, Statement, TransactionStatus } from './types';
+import { Assignment, Dealer, DealerPayment, DealerPaymentAllocation, Employee, EmployeeCommission, EmployeePayment, EmployeePaymentAllocation, PendingOrderCost, PendingOrderCostScope, Role, SettlementTransaction, Statement, TransactionStatus } from './types';
 import { DashboardPage } from './pages/DashboardPage';
 import { DealersPage } from './pages/DealersPage';
 import { AssignmentsPage, DealerProfilePage, EmployeeProfilePage, EmployeesPage, MyCommissionsPage, SettingsPage, StatementDetailPage, TransactionsPage } from './pages/PlaceholderPages';
@@ -22,7 +22,9 @@ import {
 import {
   approveTransaction,
   createStatement as createSupabaseStatement,
+  createPendingOrderCost,
   createTransaction as createSupabaseTransaction,
+  cancelPendingOrderCost as cancelSupabasePendingOrderCost,
   deleteTransactionSafely,
   deleteStatementSafely as deleteSupabaseStatementSafely,
   fetchDealerPaymentAllocations,
@@ -32,12 +34,18 @@ import {
   fetchEmployeePayments,
   fetchStatements,
   fetchTransactions,
+  fetchPendingOrderCosts,
   createOrUpdateEmployeeCommissions,
   recordDealerPaymentWithAllocations,
   recordEmployeePaymentWithAllocations,
+  resolvePendingOrderCost as resolveSupabasePendingOrderCost,
+  updatePendingOrderCost as updateSupabasePendingOrderCost,
   rejectTransaction,
   updateStatementStatus,
   type CreateTransactionInput,
+  type PendingOrderCostInput,
+  type PendingOrderCostUpdateInput,
+  type ResolvePendingOrderCostInput,
   type RecordDealerPaymentInput,
   type RecordEmployeePaymentInput,
 } from './lib/settlementActivityService';
@@ -157,6 +165,7 @@ export function App() {
   const [employeeCommissions, setEmployeeCommissions] = useState<EmployeeCommission[]>(() => loadFromStorage('employeeCommissions', initialEmployeeCommissions));
   const [employeePayments, setEmployeePayments] = useState<EmployeePayment[]>(() => loadFromStorage('employeePayments', []));
   const [employeePaymentAllocations, setEmployeePaymentAllocations] = useState<EmployeePaymentAllocation[]>(() => loadFromStorage('employeePaymentAllocations', []));
+  const [pendingOrderCosts, setPendingOrderCosts] = useState<PendingOrderCost[]>(() => loadFromStorage('pendingOrderCosts', []));
   const [employeeAssignments, setEmployeeAssignments] = useState<EmployeeAssignmentState>(() =>
     loadFromStorage('employeeAssignments', initialEmployeeAssignments),
   );
@@ -172,6 +181,7 @@ export function App() {
   const [supabaseEmployeeCommissions, setSupabaseEmployeeCommissions] = useState<EmployeeCommission[] | null>(null);
   const [supabaseEmployeePayments, setSupabaseEmployeePayments] = useState<EmployeePayment[] | null>(null);
   const [supabaseEmployeePaymentAllocations, setSupabaseEmployeePaymentAllocations] = useState<EmployeePaymentAllocation[] | null>(null);
+  const [supabasePendingOrderCosts, setSupabasePendingOrderCosts] = useState<PendingOrderCost[] | null>(null);
   const [activityLoading, setActivityLoading] = useState(false);
   const [activityError, setActivityError] = useState('');
   const [dealerPaymentLoading, setDealerPaymentLoading] = useState(false);
@@ -232,6 +242,7 @@ export function App() {
     if (!usingSupabaseReferenceData) {
       setSupabaseStatements(null);
       setSupabaseTransactions(null);
+      setSupabasePendingOrderCosts(null);
       setSupabaseDealerPayments(null);
       setSupabaseDealerPaymentAllocations(null);
       setSupabaseEmployeeCommissions(null);
@@ -250,17 +261,28 @@ export function App() {
     setActivityLoading(true);
     setActivityError('');
 
-    Promise.all([fetchStatements(activeDealers), fetchTransactions(activeDealers)])
-      .then(([nextStatements, nextTransactions]) => {
+    const loadActivity = async () => {
+      const [nextStatements, nextTransactions] = await Promise.all([
+        fetchStatements(activeDealers),
+        fetchTransactions(activeDealers),
+      ]);
+      const nextPendingOrderCosts = await fetchPendingOrderCosts(activeDealers, nextStatements);
+      return { nextStatements, nextTransactions, nextPendingOrderCosts };
+    };
+
+    loadActivity()
+      .then(({ nextStatements, nextTransactions, nextPendingOrderCosts }) => {
         if (!active) return;
         setSupabaseStatements(nextStatements);
         setSupabaseTransactions(nextTransactions);
+        setSupabasePendingOrderCosts(nextPendingOrderCosts);
       })
       .catch((error) => {
         if (!active) return;
         console.warn('Failed to load Supabase statements and transactions.', error);
         setSupabaseStatements(null);
         setSupabaseTransactions(null);
+        setSupabasePendingOrderCosts(null);
         setActivityError('Supabase statements and transactions could not be loaded. The app is using local settlement activity.');
       })
       .finally(() => {
@@ -319,6 +341,7 @@ export function App() {
   const usingSupabaseDealerPaymentData = usingSupabaseActivityData;
   const activeStatements = usingSupabaseActivityData ? supabaseStatements! : statements;
   const activeTransactions = usingSupabaseActivityData ? supabaseTransactions! : transactions;
+  const activePendingOrderCosts = usingSupabaseActivityData ? supabasePendingOrderCosts ?? [] : pendingOrderCosts;
   const activeDealerPayments = usingSupabaseDealerPaymentData ? supabaseDealerPayments ?? [] : dealerPayments;
   const activeDealerPaymentAllocations = usingSupabaseDealerPaymentData
     ? supabaseDealerPaymentAllocations ?? []
@@ -440,6 +463,7 @@ export function App() {
   useEffect(() => { saveToStorage('employeeCommissions', employeeCommissions); }, [employeeCommissions]);
   useEffect(() => { saveToStorage('employeePayments', employeePayments); }, [employeePayments]);
   useEffect(() => { saveToStorage('employeePaymentAllocations', employeePaymentAllocations); }, [employeePaymentAllocations]);
+  useEffect(() => { saveToStorage('pendingOrderCosts', pendingOrderCosts); }, [pendingOrderCosts]);
   useEffect(() => { saveToStorage('employeeAssignments', employeeAssignments); }, [employeeAssignments]);
   useEffect(() => {
     if (usingSupabaseEmployeeSettlementData) return;
@@ -578,6 +602,23 @@ export function App() {
         ['paid', 'partially_paid'].includes(commission.status) ||
         commission.paidAmount > 0,
     );
+
+  const getPendingCostStatus = (
+    scope: PendingOrderCostScope,
+    finalPrintingCost?: number | null,
+    finalShippingCost?: number | null,
+  ): PendingOrderCost['status'] => {
+    const printingResolved = finalPrintingCost !== null && finalPrintingCost !== undefined;
+    const shippingResolved = finalShippingCost !== null && finalShippingCost !== undefined;
+    if (scope === 'printing') return printingResolved ? 'resolved' : 'pending';
+    if (scope === 'shipping') return shippingResolved ? 'resolved' : 'pending';
+    if (printingResolved && shippingResolved) return 'resolved';
+    if (printingResolved || shippingResolved) return 'partially_resolved';
+    return 'pending';
+  };
+
+  const replacePendingCost = (rows: PendingOrderCost[], next: PendingOrderCost) =>
+    rows.map((row) => (row.id === next.id ? next : row));
 
   const handleCreateStatement = async (dealer: Dealer, month: string) => {
     if (!usingSupabaseActivityData) return;
@@ -773,6 +814,179 @@ export function App() {
     } catch (error) {
       setFlash(friendlyTransactionDeleteError(error));
       return false;
+    }
+  };
+
+  const handleCreatePendingOrderCost = async (input: PendingOrderCostInput) => {
+    if (role === 'employee' && !addTransactionStoreIds.includes(input.dealer.storeId)) {
+      setFlash('Pending order cost could not be created for this dealer.');
+      throw new Error('Employee cannot add pending costs for this dealer.');
+    }
+
+    try {
+      if (usingSupabaseActivityData) {
+        const created = await createPendingOrderCost(input);
+        setSupabasePendingOrderCosts((previous) => [...(previous ?? []), created]);
+      } else {
+        const created: PendingOrderCost = {
+          id: `poc-${Date.now()}`,
+          dealerId: input.dealer.id,
+          statementId: input.statement?.id ?? null,
+          orderCode: input.orderCode,
+          costScope: input.costScope,
+          estimatedPrintingCost: input.estimatedPrintingCost ?? null,
+          estimatedShippingCost: input.estimatedShippingCost ?? null,
+          finalPrintingCost: null,
+          finalShippingCost: null,
+          currency: input.currency,
+          exchangeRateToUsd: input.exchangeRateToUsd,
+          note: input.note || null,
+          status: 'pending',
+          createdBy: role,
+          resolvedAt: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        setPendingOrderCosts((previous) => [...previous, created]);
+      }
+      setFlash('Pending order cost created.');
+    } catch (error) {
+      setFlash(friendlySupabaseError(error, 'Pending order cost could not be created'));
+      throw error;
+    }
+  };
+
+  const handleUpdatePendingOrderCost = async (
+    pendingCost: PendingOrderCost,
+    updates: PendingOrderCostUpdateInput,
+  ) => {
+    if (role !== 'admin') return;
+
+    try {
+      if (usingSupabaseActivityData) {
+        const updated = await updateSupabasePendingOrderCost(
+          pendingCost.supabaseId ?? pendingCost.id,
+          updates,
+          activeDealers,
+          activeStatements,
+        );
+        setSupabasePendingOrderCosts((previous) => replacePendingCost(previous ?? [], updated));
+      } else {
+        setPendingOrderCosts((previous) =>
+          replacePendingCost(previous, {
+            ...pendingCost,
+            ...updates,
+            updatedAt: new Date().toISOString(),
+          }),
+        );
+      }
+      setFlash('Pending order cost saved.');
+    } catch (error) {
+      setFlash(friendlySupabaseError(error, 'Pending order cost could not be saved'));
+      throw error;
+    }
+  };
+
+  const handleCancelPendingOrderCost = async (pendingCost: PendingOrderCost) => {
+    if (role !== 'admin') return;
+
+    try {
+      if (usingSupabaseActivityData) {
+        const updated = await cancelSupabasePendingOrderCost(
+          pendingCost.supabaseId ?? pendingCost.id,
+          activeDealers,
+          activeStatements,
+        );
+        setSupabasePendingOrderCosts((previous) => replacePendingCost(previous ?? [], updated));
+      } else {
+        setPendingOrderCosts((previous) =>
+          replacePendingCost(previous, {
+            ...pendingCost,
+            status: 'cancelled',
+            updatedAt: new Date().toISOString(),
+          }),
+        );
+      }
+      setFlash('Pending order cost cancelled.');
+    } catch (error) {
+      setFlash(friendlySupabaseError(error, 'Pending order cost could not be cancelled'));
+      throw error;
+    }
+  };
+
+  const handleResolvePendingOrderCost = async (input: ResolvePendingOrderCostInput) => {
+    if (role !== 'admin') return;
+
+    try {
+      if (usingSupabaseActivityData) {
+        const resolved = await resolveSupabasePendingOrderCost(input);
+        setSupabasePendingOrderCosts((previous) => replacePendingCost(previous ?? [], resolved.pendingCost));
+        setSupabaseTransactions((previous) => [...resolved.transactions, ...(previous ?? [])]);
+      } else {
+        const now = new Date().toISOString();
+        const transactionDate = now.slice(0, 10);
+        const nextTransactions: SettlementTransaction[] = [];
+        if ((input.finalPrintingCost ?? 0) > 0) {
+          const usdAmount = Math.round(((input.finalPrintingCost ?? 0) * input.exchangeRateToUsd + Number.EPSILON) * 100) / 100;
+          nextTransactions.push({
+            id: `t-${Date.now()}-printing`,
+            dealerId: input.dealer.id,
+            statementId: input.statement.id,
+            date: transactionDate,
+            type: 'printing_cost',
+            amount: usdAmount,
+            originalAmount: input.finalPrintingCost ?? 0,
+            originalCurrency: input.currency,
+            exchangeRateToUsd: input.exchangeRateToUsd,
+            usdAmount,
+            status: 'confirmed',
+            orderCode: input.pendingCost.orderCode,
+            description: `Resolved pending printing cost for ${input.pendingCost.orderCode}`,
+            createdByRole: 'admin',
+          });
+        }
+        if ((input.finalShippingCost ?? 0) > 0) {
+          const usdAmount = Math.round(((input.finalShippingCost ?? 0) * input.exchangeRateToUsd + Number.EPSILON) * 100) / 100;
+          nextTransactions.push({
+            id: `t-${Date.now()}-shipping`,
+            dealerId: input.dealer.id,
+            statementId: input.statement.id,
+            date: transactionDate,
+            type: 'shipping_cost',
+            amount: usdAmount,
+            originalAmount: input.finalShippingCost ?? 0,
+            originalCurrency: input.currency,
+            exchangeRateToUsd: input.exchangeRateToUsd,
+            usdAmount,
+            status: 'confirmed',
+            orderCode: input.pendingCost.orderCode,
+            description: `Resolved pending shipping cost for ${input.pendingCost.orderCode}`,
+            createdByRole: 'admin',
+          });
+        }
+        const status = getPendingCostStatus(
+          input.pendingCost.costScope,
+          input.finalPrintingCost,
+          input.finalShippingCost,
+        );
+        setTransactions((previous) => [...nextTransactions, ...previous]);
+        setPendingOrderCosts((previous) =>
+          replacePendingCost(previous, {
+            ...input.pendingCost,
+            finalPrintingCost: input.finalPrintingCost ?? null,
+            finalShippingCost: input.finalShippingCost ?? null,
+            currency: input.currency,
+            exchangeRateToUsd: input.exchangeRateToUsd,
+            status,
+            resolvedAt: status === 'resolved' ? now : null,
+            updatedAt: now,
+          }),
+        );
+      }
+      setFlash('Pending order cost resolved.');
+    } catch (error) {
+      setFlash(friendlySupabaseError(error, 'Pending order cost could not be resolved'));
+      throw error;
     }
   };
 
@@ -1016,6 +1230,7 @@ export function App() {
     setEmployeeCommissions(initialEmployeeCommissions);
     setEmployeePayments([]);
     setEmployeePaymentAllocations([]);
+    setPendingOrderCosts([]);
     setEmployeeAssignments(initialEmployeeAssignments);
     if (usingSupabaseReferenceData && supabaseReferenceAssignments) {
       setSupabaseAssignmentState(supabaseReferenceAssignments);
@@ -1074,10 +1289,10 @@ export function App() {
           )
         }
       >
-        <Route index element={<DashboardPage dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} allocations={activeDealerPaymentAllocations} role={role} employee={{ ...employee, assignments: visibleEmployeeAssignments }} employeeCommissions={role === 'employee' ? employeeVisibleCommissions : activeEmployeeCommissions} employeePaymentAllocations={activeEmployeePaymentAllocations} dealerPayments={activeDealerPayments} employeePayments={activeEmployeePayments} />} />
+        <Route index element={<DashboardPage dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} allocations={activeDealerPaymentAllocations} role={role} employee={{ ...employee, assignments: visibleEmployeeAssignments }} employeeCommissions={role === 'employee' ? employeeVisibleCommissions : activeEmployeeCommissions} employeePaymentAllocations={activeEmployeePaymentAllocations} dealerPayments={activeDealerPayments} employeePayments={activeEmployeePayments} pendingOrderCosts={activePendingOrderCosts} />} />
         <Route path="dealers" element={<DealersPage dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} allocations={activeDealerPaymentAllocations} storeIds={role === 'employee' ? assignedStoreIds : undefined} />} />
-        <Route path="dealers/:dealerId" element={<DealerProfilePage role={role} assignedStoreIds={assignedStoreIds} addTransactionStoreIds={addTransactionStoreIds} dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} setStatements={setActiveStatements} setFlash={setFlash} payments={activeDealerPayments} allocations={activeDealerPaymentAllocations} setPayments={setDealerPayments} setAllocations={setDealerPaymentAllocations} employees={employeesWithAssignments} employeeCommissions={activeEmployeeCommissions} setEmployeeCommissions={setEmployeeCommissions} onCreateStatement={usingSupabaseActivityData ? handleCreateStatement : undefined} onUpdateStatementStatus={usingSupabaseActivityData ? handleUpdateStatementStatus : undefined} onRecordDealerPayment={usingSupabaseDealerPaymentData ? handleRecordDealerPayment : undefined} onDeleteStatement={handleDeleteStatement} onUpdateDealer={updateDealer} />} />
-        <Route path="statements/:statementId" element={<StatementDetailPage role={role} assignedStoreIds={assignedStoreIds} addTransactionStoreIds={addTransactionStoreIds} dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} setTransactions={setActiveTransactions} setFlash={setFlash} allocations={activeDealerPaymentAllocations} employees={employeesWithAssignments} onCreateTransaction={usingSupabaseActivityData ? handleCreateTransaction : undefined} onDeleteStatement={handleDeleteStatement} onDeleteTransaction={handleDeleteTransaction} />} />
+        <Route path="dealers/:dealerId" element={<DealerProfilePage role={role} assignedStoreIds={assignedStoreIds} addTransactionStoreIds={addTransactionStoreIds} dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} setStatements={setActiveStatements} setFlash={setFlash} payments={activeDealerPayments} allocations={activeDealerPaymentAllocations} setPayments={setDealerPayments} setAllocations={setDealerPaymentAllocations} employees={employeesWithAssignments} employeeCommissions={activeEmployeeCommissions} setEmployeeCommissions={setEmployeeCommissions} pendingOrderCosts={activePendingOrderCosts} onCreateStatement={usingSupabaseActivityData ? handleCreateStatement : undefined} onUpdateStatementStatus={usingSupabaseActivityData ? handleUpdateStatementStatus : undefined} onRecordDealerPayment={usingSupabaseDealerPaymentData ? handleRecordDealerPayment : undefined} onDeleteStatement={handleDeleteStatement} onUpdateDealer={updateDealer} onCreatePendingOrderCost={handleCreatePendingOrderCost} onUpdatePendingOrderCost={handleUpdatePendingOrderCost} onCancelPendingOrderCost={handleCancelPendingOrderCost} onResolvePendingOrderCost={handleResolvePendingOrderCost} />} />
+        <Route path="statements/:statementId" element={<StatementDetailPage role={role} assignedStoreIds={assignedStoreIds} addTransactionStoreIds={addTransactionStoreIds} dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} setTransactions={setActiveTransactions} setFlash={setFlash} allocations={activeDealerPaymentAllocations} employees={employeesWithAssignments} pendingOrderCosts={activePendingOrderCosts} onCreateTransaction={usingSupabaseActivityData ? handleCreateTransaction : undefined} onDeleteStatement={handleDeleteStatement} onDeleteTransaction={handleDeleteTransaction} onCreatePendingOrderCost={handleCreatePendingOrderCost} onUpdatePendingOrderCost={handleUpdatePendingOrderCost} onCancelPendingOrderCost={handleCancelPendingOrderCost} onResolvePendingOrderCost={handleResolvePendingOrderCost} />} />
         <Route path="transactions" element={role === 'admin' ? <TransactionsPage role={role} assignedStoreIds={assignedStoreIds} dealers={activeDealers} transactions={activeTransactions} setTransactions={setActiveTransactions} setFlash={setFlash} onUpdateTransactionStatus={usingSupabaseActivityData ? handleTransactionStatus : undefined} onDeleteTransaction={handleDeleteTransaction} /> : <Navigate to="/" replace />} />
         <Route path="employees" element={role === 'admin' ? <EmployeesPage employees={employeesWithAssignments} dealers={activeDealers} commissions={activeEmployeeCommissions} allocations={activeEmployeePaymentAllocations} /> : <Navigate to="/" replace />} />
         <Route path="employees/:employeeId" element={<EmployeeProfilePage role={role} employees={employeesWithAssignments} dealers={activeDealers} commissions={activeEmployeeCommissions} payments={activeEmployeePayments} allocations={activeEmployeePaymentAllocations} setPayments={setEmployeePayments} setAllocations={setEmployeePaymentAllocations} setCommissions={setEmployeeCommissions} setFlash={setFlash} onRecordEmployeePayment={usingSupabaseEmployeeSettlementData ? handleRecordEmployeePayment : undefined} />} />

@@ -12,6 +12,9 @@ import {
   EmployeePaymentAllocation,
   ManualAdjustmentDirection,
   ManualAdjustmentScope,
+  PendingOrderCost,
+  PendingOrderCostScope,
+  PendingOrderCostStatus,
   Role,
   SettlementTransaction,
   Statement,
@@ -41,7 +44,13 @@ import {
 import { PageShell } from './Shared';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { Button, DataTable, EmptyState, SectionCard } from '../components/ui/Primitives';
-import type { RecordDealerPaymentInput, RecordEmployeePaymentInput } from '../lib/settlementActivityService';
+import type {
+  PendingOrderCostInput,
+  PendingOrderCostUpdateInput,
+  RecordDealerPaymentInput,
+  RecordEmployeePaymentInput,
+  ResolvePendingOrderCostInput,
+} from '../lib/settlementActivityService';
 import {
   currencyOptions,
   formatCurrencyAmount,
@@ -74,6 +83,12 @@ const adjustmentDirections: ManualAdjustmentDirection[] = ['increase', 'decrease
 function parsePositiveNumber(value: string) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function parseOptionalNonNegativeNumber(value: string) {
+  if (value.trim() === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
 function formatPercent(value: number) {
@@ -260,6 +275,411 @@ function FormLabel({ label, children }: { label: string; children: React.ReactNo
   );
 }
 
+function formatOptionalCost(printing?: number | null, shipping?: number | null, currency = 'USD') {
+  const parts = [
+    printing !== null && printing !== undefined ? `Printing ${formatCurrencyAmount(printing, currency)}` : '',
+    shipping !== null && shipping !== undefined ? `Shipping ${formatCurrencyAmount(shipping, currency)}` : '',
+  ].filter(Boolean);
+  return parts.join(' · ') || '-';
+}
+
+type PendingCostFilter = 'active' | 'resolved' | 'cancelled' | 'all';
+
+function PendingOrderCostsPanel({
+  role,
+  dealer,
+  statements,
+  pendingOrderCosts,
+  canCreate,
+  defaultStatement,
+  setFlash,
+  onCreate,
+  onUpdate,
+  onCancel,
+  onResolve,
+}: {
+  role: Role;
+  dealer: Dealer;
+  statements: Statement[];
+  pendingOrderCosts: PendingOrderCost[];
+  canCreate: boolean;
+  defaultStatement?: Statement;
+  setFlash: (value: string) => void;
+  onCreate?: (input: PendingOrderCostInput) => Promise<void> | void;
+  onUpdate?: (cost: PendingOrderCost, updates: PendingOrderCostUpdateInput) => Promise<void> | void;
+  onCancel?: (cost: PendingOrderCost) => Promise<void> | void;
+  onResolve?: (input: ResolvePendingOrderCostInput) => Promise<void> | void;
+}) {
+  const [filter, setFilter] = useState<PendingCostFilter>('active');
+  const [showCreate, setShowCreate] = useState(false);
+  const [editing, setEditing] = useState<PendingOrderCost | null>(null);
+  const [resolving, setResolving] = useState<PendingOrderCost | null>(null);
+  const [form, setForm] = useState({
+    orderCode: '',
+    costScope: 'both' as PendingOrderCostScope,
+    estimatedPrintingCost: '',
+    estimatedShippingCost: '',
+    currency: 'USD' as SupportedCurrency,
+    exchangeRateToUsd: '1',
+    note: '',
+  });
+  const [resolveForm, setResolveForm] = useState({
+    statementId: defaultStatement?.id || statements[0]?.id || '',
+    finalPrintingCost: '',
+    finalShippingCost: '',
+    currency: 'USD' as SupportedCurrency,
+    exchangeRateToUsd: '1',
+  });
+  const [error, setError] = useState('');
+  const rateLookup = useExchangeRateAutofill({
+    currency: form.currency,
+    date: new Date().toISOString().slice(0, 10),
+    setExchangeRateToUsd: (value) => setForm((previous) => ({ ...previous, exchangeRateToUsd: value })),
+  });
+  const resolveRateLookup = useExchangeRateAutofill({
+    currency: resolveForm.currency,
+    date: new Date().toISOString().slice(0, 10),
+    setExchangeRateToUsd: (value) => setResolveForm((previous) => ({ ...previous, exchangeRateToUsd: value })),
+  });
+
+  const activeRows = pendingOrderCosts.filter((cost) =>
+    ['pending', 'partially_resolved'].includes(cost.status),
+  );
+  const rows = pendingOrderCosts.filter((cost) => {
+    if (filter === 'all') return true;
+    if (filter === 'active') return ['pending', 'partially_resolved'].includes(cost.status);
+    return cost.status === filter;
+  });
+
+  const openCreate = () => {
+    setError('');
+    setEditing(null);
+    setForm({
+      orderCode: '',
+      costScope: 'both',
+      estimatedPrintingCost: '',
+      estimatedShippingCost: '',
+      currency: 'USD',
+      exchangeRateToUsd: '1',
+      note: '',
+    });
+    setShowCreate(true);
+  };
+
+  const openEdit = (cost: PendingOrderCost) => {
+    setError('');
+    setShowCreate(false);
+    setEditing(cost);
+    setForm({
+      orderCode: cost.orderCode,
+      costScope: cost.costScope,
+      estimatedPrintingCost: cost.estimatedPrintingCost?.toString() ?? '',
+      estimatedShippingCost: cost.estimatedShippingCost?.toString() ?? '',
+      currency: (cost.currency as SupportedCurrency) || 'USD',
+      exchangeRateToUsd: formatRateForInput(cost.exchangeRateToUsd),
+      note: cost.note || '',
+    });
+  };
+
+  const openResolve = (cost: PendingOrderCost) => {
+    setError('');
+    setResolving(cost);
+    setResolveForm({
+      statementId: defaultStatement?.id || cost.statementId || statements[0]?.id || '',
+      finalPrintingCost: cost.finalPrintingCost?.toString() ?? '',
+      finalShippingCost: cost.finalShippingCost?.toString() ?? '',
+      currency: (cost.currency as SupportedCurrency) || 'USD',
+      exchangeRateToUsd: formatRateForInput(cost.exchangeRateToUsd || 1),
+    });
+  };
+
+  const validateCostForm = () => {
+    const estimatedPrintingCost = parseOptionalNonNegativeNumber(form.estimatedPrintingCost);
+    const estimatedShippingCost = parseOptionalNonNegativeNumber(form.estimatedShippingCost);
+    const exchangeRateToUsd = getExchangeRateForSave(form.currency, form.exchangeRateToUsd);
+
+    if (!form.orderCode.trim()) return { error: 'Order ID / Order Code is required.' };
+    if (!form.costScope) return { error: 'Cost scope is required.' };
+    if (estimatedPrintingCost === undefined || estimatedShippingCost === undefined) {
+      return { error: 'Estimated costs must be zero or greater.' };
+    }
+    if (!exchangeRateToUsd) return { error: 'Exchange rate to USD must be greater than zero.' };
+
+    return { estimatedPrintingCost, estimatedShippingCost, exchangeRateToUsd };
+  };
+
+  const saveCreate = async () => {
+    const validated = validateCostForm();
+    if ('error' in validated) {
+      setError(validated.error || 'Pending order cost could not be saved.');
+      return;
+    }
+    await onCreate?.({
+      dealer,
+      statement: defaultStatement ?? null,
+      orderCode: form.orderCode.trim(),
+      costScope: form.costScope,
+      estimatedPrintingCost: validated.estimatedPrintingCost,
+      estimatedShippingCost: validated.estimatedShippingCost,
+      currency: form.currency,
+      exchangeRateToUsd: validated.exchangeRateToUsd,
+      note: form.note.trim() || null,
+    });
+    setShowCreate(false);
+  };
+
+  const saveEdit = async () => {
+    if (!editing) return;
+    const validated = validateCostForm();
+    if ('error' in validated) {
+      setError(validated.error || 'Pending order cost could not be saved.');
+      return;
+    }
+    await onUpdate?.(editing, {
+      orderCode: form.orderCode.trim(),
+      costScope: form.costScope,
+      estimatedPrintingCost: validated.estimatedPrintingCost,
+      estimatedShippingCost: validated.estimatedShippingCost,
+      currency: form.currency,
+      exchangeRateToUsd: validated.exchangeRateToUsd,
+      note: form.note.trim() || null,
+    });
+    setEditing(null);
+  };
+
+  const saveResolve = async () => {
+    if (!resolving) return;
+    const finalPrintingCost = parseOptionalNonNegativeNumber(resolveForm.finalPrintingCost);
+    const finalShippingCost = parseOptionalNonNegativeNumber(resolveForm.finalShippingCost);
+    const exchangeRateToUsd = getExchangeRateForSave(resolveForm.currency, resolveForm.exchangeRateToUsd);
+    const targetStatement = statements.find((statement) => statement.id === resolveForm.statementId);
+
+    if (!targetStatement) {
+      setError('Target statement is required.');
+      return;
+    }
+    if (finalPrintingCost === undefined || finalShippingCost === undefined) {
+      setError('Final costs must be zero or greater.');
+      return;
+    }
+    if ((finalPrintingCost ?? 0) <= 0 && (finalShippingCost ?? 0) <= 0) {
+      setError('Enter at least one non-zero final cost to resolve.');
+      return;
+    }
+    if (!exchangeRateToUsd) {
+      setError('Exchange rate to USD must be greater than zero.');
+      return;
+    }
+
+    await onResolve?.({
+      pendingCost: resolving,
+      dealer,
+      statement: targetStatement,
+      finalPrintingCost,
+      finalShippingCost,
+      currency: resolveForm.currency,
+      exchangeRateToUsd,
+    });
+    setResolving(null);
+  };
+
+  const cancelCost = async (cost: PendingOrderCost) => {
+    if (!window.confirm('Cancel this pending order cost?')) return;
+    await onCancel?.(cost);
+  };
+
+  return (
+    <>
+      <SectionCard
+        title="Pending Order Costs"
+        subtitle="Track orders whose printing or shipping costs are not finalized yet."
+        action={
+          canCreate ? (
+            <Button variant="primary" onClick={openCreate}>
+              Add Pending Cost
+            </Button>
+          ) : undefined
+        }
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
+          <p className="text-sm text-slate-600">
+            {activeRows.length} active unresolved item{activeRows.length === 1 ? '' : 's'} for this dealer.
+          </p>
+          <select
+            className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm shadow-sm"
+            value={filter}
+            onChange={(event) => setFilter(event.target.value as PendingCostFilter)}
+          >
+            <option value="active">Active</option>
+            <option value="resolved">Resolved</option>
+            <option value="cancelled">Cancelled</option>
+            <option value="all">All</option>
+          </select>
+        </div>
+        {rows.length === 0 ? (
+          <EmptyState title={filter === 'active' ? 'No unresolved order costs.' : 'No pending order costs match this filter.'} />
+        ) : (
+          <DataTable>
+            <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Order ID</th>
+                <th className="px-4 py-3">Scope</th>
+                <th className="px-4 py-3">Estimated Cost</th>
+                <th className="px-4 py-3">Final Cost</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Note</th>
+                <th className="px-4 py-3">Created</th>
+                <th className="px-4 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((cost) => (
+                <tr key={cost.id} className="border-t border-slate-100 transition hover:bg-slate-50">
+                  <td className="px-4 py-3 font-medium text-slate-950">{cost.orderCode}</td>
+                  <td className="px-4 py-3 capitalize">{cost.costScope}</td>
+                  <td className="px-4 py-3">{formatOptionalCost(cost.estimatedPrintingCost, cost.estimatedShippingCost, cost.currency)}</td>
+                  <td className="px-4 py-3">{formatOptionalCost(cost.finalPrintingCost, cost.finalShippingCost, cost.currency)}</td>
+                  <td className="px-4 py-3"><StatusBadge status={cost.status} /></td>
+                  <td className="px-4 py-3 text-slate-600">{cost.note || '-'}</td>
+                  <td className="px-4 py-3 text-slate-600">{cost.createdAt.slice(0, 10)}</td>
+                  <td className="px-4 py-3 text-right">
+                    {role === 'admin' && (
+                      <div className="flex justify-end gap-2">
+                        <Button onClick={() => openEdit(cost)}>Edit</Button>
+                        {['pending', 'partially_resolved'].includes(cost.status) && (
+                          <>
+                            <Button variant="primary" onClick={() => openResolve(cost)}>Resolve</Button>
+                            <Button variant="danger" onClick={() => cancelCost(cost)}>Cancel</Button>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </DataTable>
+        )}
+        <div className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
+          Pending costs are reminders only. Statement totals change only after resolving them into real printing or shipping transactions.
+        </div>
+      </SectionCard>
+
+      {(showCreate || editing) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
+          <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-xl">
+            <div className="border-b border-slate-200 px-5 py-4">
+              <h3 className="text-base font-semibold text-slate-950">{editing ? 'Edit Pending Cost' : 'Add Pending Cost'}</h3>
+              <p className="mt-1 text-sm text-slate-500">Pending costs do not affect statement totals until resolved.</p>
+            </div>
+            <div className="grid gap-3 p-5 md:grid-cols-2">
+              <FormLabel label="Order ID / Order Code">
+                <input className="h-10 w-full px-3" value={form.orderCode} onChange={(event) => setForm({ ...form, orderCode: event.target.value })} />
+              </FormLabel>
+              <FormLabel label="Cost Scope">
+                <select className="h-10 w-full px-3" value={form.costScope} onChange={(event) => setForm({ ...form, costScope: event.target.value as PendingOrderCostScope })}>
+                  <option value="printing">Printing</option>
+                  <option value="shipping">Shipping</option>
+                  <option value="both">Both</option>
+                </select>
+              </FormLabel>
+              <FormLabel label="Estimated Printing Cost">
+                <input className="h-10 w-full px-3" type="text" inputMode="decimal" value={form.estimatedPrintingCost} onChange={(event) => setForm({ ...form, estimatedPrintingCost: event.target.value })} />
+              </FormLabel>
+              <FormLabel label="Estimated Shipping Cost">
+                <input className="h-10 w-full px-3" type="text" inputMode="decimal" value={form.estimatedShippingCost} onChange={(event) => setForm({ ...form, estimatedShippingCost: event.target.value })} />
+              </FormLabel>
+              <FormLabel label="Currency">
+                <select className="h-10 w-full px-3" value={form.currency} onChange={(event) => setForm(handleCurrencyChange(form, event.target.value as SupportedCurrency))}>
+                  {currencyOptions.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
+                </select>
+              </FormLabel>
+              <FormLabel label="Exchange Rate to USD">
+                <input
+                  className="h-10 w-full px-3"
+                  type="text"
+                  inputMode="decimal"
+                  value={form.exchangeRateToUsd}
+                  onChange={(event) => {
+                    rateLookup.markManualOverride();
+                    setForm({ ...form, exchangeRateToUsd: event.target.value });
+                  }}
+                />
+              </FormLabel>
+              <div className="md:col-span-2">
+                <FormLabel label="Note">
+                  <textarea className="min-h-20 w-full px-3 py-2" value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} />
+                </FormLabel>
+              </div>
+              <div className="md:col-span-2">
+                <ExchangeRateLookupStatus lookup={rateLookup.lookup} />
+              </div>
+              {error && <p className="md:col-span-2 text-sm font-medium text-red-700">{error}</p>}
+            </div>
+            <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4">
+              <Button onClick={() => { setShowCreate(false); setEditing(null); }}>Cancel</Button>
+              <Button variant="primary" onClick={editing ? saveEdit : saveCreate}>{editing ? 'Save Pending Cost' : 'Create Pending Cost'}</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {resolving && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-xl">
+            <div className="border-b border-slate-200 px-5 py-4">
+              <h3 className="text-base font-semibold text-slate-950">Resolve Pending Cost</h3>
+              <p className="mt-1 text-sm text-slate-500">Resolution creates confirmed printing/shipping transactions on the selected statement.</p>
+            </div>
+            <div className="grid gap-3 p-5 md:grid-cols-2">
+              <FormLabel label="Target Statement">
+                <select className="h-10 w-full px-3" value={resolveForm.statementId} onChange={(event) => setResolveForm({ ...resolveForm, statementId: event.target.value })}>
+                  {statements.map((statement) => <option key={statement.id} value={statement.id}>{statement.month}</option>)}
+                </select>
+              </FormLabel>
+              <FormLabel label="Currency">
+                <select className="h-10 w-full px-3" value={resolveForm.currency} onChange={(event) => setResolveForm(handleCurrencyChange(resolveForm, event.target.value as SupportedCurrency))}>
+                  {currencyOptions.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
+                </select>
+              </FormLabel>
+              <FormLabel label="Final Printing Cost">
+                <input className="h-10 w-full px-3" type="text" inputMode="decimal" value={resolveForm.finalPrintingCost} onChange={(event) => setResolveForm({ ...resolveForm, finalPrintingCost: event.target.value })} />
+              </FormLabel>
+              <FormLabel label="Final Shipping Cost">
+                <input className="h-10 w-full px-3" type="text" inputMode="decimal" value={resolveForm.finalShippingCost} onChange={(event) => setResolveForm({ ...resolveForm, finalShippingCost: event.target.value })} />
+              </FormLabel>
+              <FormLabel label="Exchange Rate to USD">
+                <input
+                  className="h-10 w-full px-3"
+                  type="text"
+                  inputMode="decimal"
+                  value={resolveForm.exchangeRateToUsd}
+                  onChange={(event) => {
+                    resolveRateLookup.markManualOverride();
+                    setResolveForm({ ...resolveForm, exchangeRateToUsd: event.target.value });
+                  }}
+                />
+              </FormLabel>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Order</p>
+                <p className="mt-1 font-semibold text-slate-950">{resolving.orderCode}</p>
+              </div>
+              <div className="md:col-span-2">
+                <ExchangeRateLookupStatus lookup={resolveRateLookup.lookup} />
+              </div>
+              {error && <p className="md:col-span-2 text-sm font-medium text-red-700">{error}</p>}
+            </div>
+            <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4">
+              <Button onClick={() => setResolving(null)}>Cancel</Button>
+              <Button variant="primary" onClick={saveResolve}>Resolve Cost</Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function PermissionBadge({ enabled }: { enabled: boolean }) {
   return (
     <span
@@ -363,10 +783,15 @@ interface DealerProfilePageProps {
   employees: Employee[];
   employeeCommissions: EmployeeCommission[];
   setEmployeeCommissions: Dispatch<SetStateAction<EmployeeCommission[]>>;
+  pendingOrderCosts: PendingOrderCost[];
   onCreateStatement?: (dealer: Dealer, month: string) => Promise<void> | void;
   onUpdateStatementStatus?: (statement: Statement, status: Statement['status']) => Promise<void> | void;
   onRecordDealerPayment?: (input: RecordDealerPaymentInput) => Promise<void> | void;
   onDeleteStatement?: (statement: Statement) => Promise<boolean> | boolean;
+  onCreatePendingOrderCost?: (input: PendingOrderCostInput) => Promise<void> | void;
+  onUpdatePendingOrderCost?: (cost: PendingOrderCost, updates: PendingOrderCostUpdateInput) => Promise<void> | void;
+  onCancelPendingOrderCost?: (cost: PendingOrderCost) => Promise<void> | void;
+  onResolvePendingOrderCost?: (input: ResolvePendingOrderCostInput) => Promise<void> | void;
   onUpdateDealer?: (
     dealerId: string,
     updates: Pick<
@@ -398,10 +823,15 @@ export function DealerProfilePage({
   setAllocations,
   employees,
   setEmployeeCommissions,
+  pendingOrderCosts,
   onCreateStatement,
   onUpdateStatementStatus,
   onRecordDealerPayment,
   onDeleteStatement,
+  onCreatePendingOrderCost,
+  onUpdatePendingOrderCost,
+  onCancelPendingOrderCost,
+  onResolvePendingOrderCost,
   onUpdateDealer,
 }: DealerProfilePageProps) {
   const { dealerId } = useParams();
@@ -443,6 +873,7 @@ export function DealerProfilePage({
   const dealerStatements = sortStatementsByPeriod(
     statements.filter((statement) => statement.dealerId === dealer.id),
   );
+  const dealerPendingOrderCosts = pendingOrderCosts.filter((cost) => cost.dealerId === dealer.id);
   const openStatements = getOpenStatementsForDealer(dealer.id, statements, transactions, dealers, allocations);
   const ledger = getDealerLedgerRows(dealer.id, statements, transactions, dealers, payments, allocations);
   const openBalance = getDealerOpenBalance(dealer.id, statements, transactions, dealers, allocations);
@@ -863,6 +1294,19 @@ export function DealerProfilePage({
         </div>
       )}
 
+      <PendingOrderCostsPanel
+        role={role}
+        dealer={dealer}
+        statements={dealerStatements}
+        pendingOrderCosts={dealerPendingOrderCosts}
+        canCreate={canAddDealerTransaction}
+        setFlash={setFlash}
+        onCreate={onCreatePendingOrderCost}
+        onUpdate={onUpdatePendingOrderCost}
+        onCancel={onCancelPendingOrderCost}
+        onResolve={onResolvePendingOrderCost}
+      />
+
       <SectionCard title="Statement Ledger" subtitle="Chronological receivable and payment activity for this dealer.">
         {ledger.length === 0 ? (
           <EmptyState title="No ledger activity yet." />
@@ -1126,6 +1570,7 @@ interface StatementDetailPageProps {
   setFlash: (value: string) => void;
   allocations: DealerPaymentAllocation[];
   employees: Employee[];
+  pendingOrderCosts: PendingOrderCost[];
   onCreateTransaction?: (
     statement: Statement,
     dealer: Dealer,
@@ -1145,6 +1590,10 @@ interface StatementDetailPageProps {
   ) => Promise<void> | void;
   onDeleteStatement?: (statement: Statement) => Promise<boolean> | boolean;
   onDeleteTransaction?: (transaction: SettlementTransaction) => Promise<boolean> | boolean;
+  onCreatePendingOrderCost?: (input: PendingOrderCostInput) => Promise<void> | void;
+  onUpdatePendingOrderCost?: (cost: PendingOrderCost, updates: PendingOrderCostUpdateInput) => Promise<void> | void;
+  onCancelPendingOrderCost?: (cost: PendingOrderCost) => Promise<void> | void;
+  onResolvePendingOrderCost?: (input: ResolvePendingOrderCostInput) => Promise<void> | void;
 }
 
 export function StatementDetailPage({
@@ -1158,9 +1607,14 @@ export function StatementDetailPage({
   setFlash,
   allocations,
   employees,
+  pendingOrderCosts,
   onCreateTransaction,
   onDeleteStatement,
   onDeleteTransaction,
+  onCreatePendingOrderCost,
+  onUpdatePendingOrderCost,
+  onCancelPendingOrderCost,
+  onResolvePendingOrderCost,
 }: StatementDetailPageProps) {
   const { statementId } = useParams();
   const navigate = useNavigate();
@@ -1193,6 +1647,9 @@ export function StatementDetailPage({
   const totals = calculateStatementTotals(statement, transactions, dealer, paid);
   const statementAllocations = allocations.filter((allocation) => allocation.statementId === statement.id);
   const commissionPreviews = getCommissionPreviewsForStatement(statement, transactions, dealer, employees);
+  const statementPendingOrderCosts = pendingOrderCosts.filter(
+    (cost) => cost.statementId === statement.id || (!cost.statementId && cost.dealerId === dealer.id),
+  );
   const addTransaction = () => {
     const originalAmount = parsePositiveNumber(form.amount);
     const exchangeRateToUsd = getExchangeRateForSave(form.currency, form.exchangeRateToUsd);
@@ -1295,6 +1752,19 @@ export function StatementDetailPage({
 
       <StatementBreakdown statement={statement} dealer={dealer} transactions={transactions} allocations={allocations} />
       <OriginalCurrencySummary transactions={txns} />
+      <PendingOrderCostsPanel
+        role={role}
+        dealer={dealer}
+        statements={statements.filter((row) => row.dealerId === dealer.id)}
+        pendingOrderCosts={statementPendingOrderCosts}
+        canCreate={canAddTransaction}
+        defaultStatement={statement}
+        setFlash={setFlash}
+        onCreate={onCreatePendingOrderCost}
+        onUpdate={onUpdatePendingOrderCost}
+        onCancel={onCancelPendingOrderCost}
+        onResolve={onResolvePendingOrderCost}
+      />
 
       {canAddTransaction ? (
         <SectionCard

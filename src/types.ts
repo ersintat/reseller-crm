@@ -6,6 +6,8 @@ export type ManualAdjustmentDirection = 'increase' | 'decrease';
 export type StatementStatus = 'draft' | 'ready_to_close' | 'open' | 'partially_paid' | 'carried_forward' | 'closed';
 export type PaymentAllocationMode = 'fifo' | 'manual';
 export type CommissionStatus = 'open' | 'partially_paid' | 'paid' | 'closed';
+export type PendingOrderCostScope = 'printing' | 'shipping' | 'both';
+export type PendingOrderCostStatus = 'pending' | 'partially_resolved' | 'resolved' | 'cancelled';
 
 export interface Store { id: string; name: string }
 export interface Dealer {
@@ -35,6 +37,26 @@ export interface DealerPaymentAllocation { id: string; paymentId: string; statem
 export interface EmployeeCommission { id: string; employeeId: string; dealerId: string; statementId: string; periodMonth: number; periodYear: number; companyShareAmount: number; printingCosts: number; shippingCosts: number; commissionBaseAdjustments: number; commissionBase: number; commissionRate: number; commissionAmount: number; paidAmount: number; remainingAmount: number; status: CommissionStatus; createdAt: string; currency?: string; supabaseId?: string }
 export interface EmployeePayment extends MoneyInUsd { id: string; employeeId: string; currency: string; paymentDate: string; description: string; allocationMode: PaymentAllocationMode; createdBy: Role; createdAt: string; supabaseId?: string }
 export interface EmployeePaymentAllocation { id: string; paymentId: string; commissionId: string; allocatedAmount: number; allocatedUsdAmount?: number; supabaseId?: string }
+export interface PendingOrderCost {
+  id: string;
+  supabaseId?: string;
+  dealerId: string;
+  statementId?: string | null;
+  orderCode: string;
+  costScope: PendingOrderCostScope;
+  estimatedPrintingCost?: number | null;
+  estimatedShippingCost?: number | null;
+  finalPrintingCost?: number | null;
+  finalShippingCost?: number | null;
+  currency: string;
+  exchangeRateToUsd: number;
+  note?: string | null;
+  status: PendingOrderCostStatus;
+  createdBy?: string | null;
+  resolvedAt?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+}
 export type AssignmentStatus = 'active' | 'inactive';
 export interface Assignment { storeId: string; commissionRatePct: number; canViewTransactions: boolean; canAddTransactions: boolean; canEditTransactions: boolean; canViewCommission: boolean; status: AssignmentStatus; supabaseId?: string; dealerId?: string }
 export interface Employee { id: string; name: string; roleTitle: string; assignments: Assignment[]; email?: string | null; status?: 'active' | 'inactive'; supabaseId?: string }

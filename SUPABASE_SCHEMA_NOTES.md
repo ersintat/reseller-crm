@@ -30,6 +30,11 @@ Milestone 6B adds the financial database foundation only. The React app still us
   - Backfills existing data so current `amount` values remain USD equivalents.
   - Adds positive exchange-rate constraints for money-moving rows.
 
+- `supabase/migrations/202605110002_pending_order_costs.sql`
+  - Adds `public.pending_order_costs` for unresolved printing/shipping cost follow-up.
+  - Enables RLS with admin full access and employee select/insert access scoped by active assignment permissions.
+  - Pending rows are reminders only and do not affect statement totals.
+
 ## Implemented
 
 - Schema and RLS foundation for future Supabase-backed financial data.
@@ -133,6 +138,15 @@ Exchange-rate lookup support:
 3. Lookup uses the selected form date and stores only the final entered `exchange_rate_to_usd` value on save.
 4. Users can manually override fetched rates, and historical saved rows are never recalculated automatically when market rates change later.
 5. Failed lookups leave the field editable with a manual-entry warning.
+
+Pending Order Costs support:
+
+1. Pending Order Costs track orders where platform payout exists but printing/shipping costs are not finalized yet.
+2. Pending costs do not affect statement totals, dealer receivables, dashboard totals, or commission calculations.
+3. Admins and permitted employees can create pending costs for assigned dealers.
+4. Admins can edit, cancel, or resolve pending costs.
+5. Resolving a pending cost creates real confirmed `printing_cost` and/or `shipping_cost` transactions on the selected target statement.
+6. Only those resolved transaction rows affect statement totals and downstream commission generation.
 
 The next milestone should add database RPCs for authoritative recalculation and transactional payment allocation.
 

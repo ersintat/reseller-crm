@@ -7,6 +7,7 @@ import {
   EmployeeCommission,
   EmployeePayment,
   EmployeePaymentAllocation,
+  PendingOrderCost,
   Role,
   SettlementTransaction,
   Statement,
@@ -37,6 +38,7 @@ interface DashboardPageProps {
   employeePaymentAllocations: EmployeePaymentAllocation[];
   dealerPayments: DealerPayment[];
   employeePayments: EmployeePayment[];
+  pendingOrderCosts: PendingOrderCost[];
 }
 
 export function DashboardPage({
@@ -50,6 +52,7 @@ export function DashboardPage({
   employeePaymentAllocations,
   dealerPayments,
   employeePayments,
+  pendingOrderCosts,
 }: DashboardPageProps) {
   const totals = getDashboardTotals(statements, transactions, dealers, allocations);
 
@@ -113,6 +116,16 @@ export function DashboardPage({
   const pendingTransactions = transactions
     .filter((transaction) => transaction.status === 'pending_review')
     .sort((a, b) => b.date.localeCompare(a.date));
+  const activePendingCosts = pendingOrderCosts.filter((cost) =>
+    ['pending', 'partially_resolved'].includes(cost.status),
+  );
+  const pendingCostRows = dealers
+    .map((dealer) => {
+      const costs = activePendingCosts.filter((cost) => cost.dealerId === dealer.id);
+      const oldest = [...costs].sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+      return { dealer, count: costs.length, oldest };
+    })
+    .filter((row) => row.count > 0);
 
   const dealerRows = dealers.map((dealer) => {
     const lastPayment = dealerPayments
@@ -353,6 +366,40 @@ export function DashboardPage({
           )}
         </SectionCard>
       </div>
+
+      <SectionCard title="Pending Order Costs" subtitle="Unresolved printing and shipping costs that do not affect totals yet.">
+        {pendingCostRows.length === 0 ? (
+          <EmptyState title="No unresolved order costs." />
+        ) : (
+          <DataTable>
+            <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Dealer</th>
+                <th className="px-4 py-3 text-right">Pending Items</th>
+                <th className="px-4 py-3">Oldest Created</th>
+                <th className="px-4 py-3 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pendingCostRows.map((row) => (
+                <tr key={row.dealer.id} className="border-t border-slate-100 transition hover:bg-slate-50/80">
+                  <td className="px-4 py-3">
+                    <p className="font-medium text-slate-950">{row.dealer.name}</p>
+                    <p className="text-xs text-slate-500">{row.dealer.storeName || row.dealer.storeId}</p>
+                  </td>
+                  <td className="px-4 py-3 text-right font-semibold text-amber-700">{row.count}</td>
+                  <td className="px-4 py-3 text-slate-600">{row.oldest?.createdAt.slice(0, 10) || '-'}</td>
+                  <td className="px-4 py-3 text-right">
+                    <Link className="rounded-lg px-2.5 py-1.5 text-indigoBrand font-medium hover:bg-indigo-50" to={`/dealers/${row.dealer.id}`}>
+                      View dealer
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </DataTable>
+        )}
+      </SectionCard>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
         <SectionCard title="Employee Commission Snapshot" subtitle="Commission exposure by employee ledger.">

@@ -10,6 +10,9 @@ import {
   ManualAdjustmentDirection,
   ManualAdjustmentScope,
   PaymentAllocationMode,
+  PendingOrderCost,
+  PendingOrderCostScope,
+  PendingOrderCostStatus,
   Role,
   SettlementTransaction,
   Statement,
@@ -118,6 +121,26 @@ interface EmployeePaymentAllocationRow {
   created_at: string | null;
 }
 
+interface PendingOrderCostRow {
+  id: string;
+  dealer_id: string;
+  statement_id: string | null;
+  order_code: string;
+  cost_scope: PendingOrderCostScope;
+  estimated_printing_cost: number | string | null;
+  estimated_shipping_cost: number | string | null;
+  final_printing_cost: number | string | null;
+  final_shipping_cost: number | string | null;
+  currency: string;
+  exchange_rate_to_usd: number | string;
+  note: string | null;
+  status: PendingOrderCostStatus;
+  created_by: string | null;
+  resolved_at: string | null;
+  created_at: string;
+  updated_at: string | null;
+}
+
 export interface CreateTransactionInput {
   date: string;
   type: TransactionType;
@@ -159,6 +182,42 @@ export interface RecordEmployeePaymentInput {
   allocations: { commissionId: string; allocatedAmount: number }[];
   commissions: EmployeeCommission[];
   existingAllocations: EmployeePaymentAllocation[];
+}
+
+export interface PendingOrderCostInput {
+  dealer: Dealer;
+  statement?: Statement | null;
+  orderCode: string;
+  costScope: PendingOrderCostScope;
+  estimatedPrintingCost?: number | null;
+  estimatedShippingCost?: number | null;
+  currency: string;
+  exchangeRateToUsd: number;
+  note?: string | null;
+}
+
+export interface PendingOrderCostUpdateInput {
+  orderCode?: string;
+  costScope?: PendingOrderCostScope;
+  estimatedPrintingCost?: number | null;
+  estimatedShippingCost?: number | null;
+  finalPrintingCost?: number | null;
+  finalShippingCost?: number | null;
+  currency?: string;
+  exchangeRateToUsd?: number;
+  note?: string | null;
+  status?: PendingOrderCostStatus;
+  resolvedAt?: string | null;
+}
+
+export interface ResolvePendingOrderCostInput {
+  pendingCost: PendingOrderCost;
+  dealer: Dealer;
+  statement: Statement;
+  finalPrintingCost?: number | null;
+  finalShippingCost?: number | null;
+  currency: string;
+  exchangeRateToUsd: number;
 }
 
 const toNumber = (value: number | string | null | undefined) => Number(value ?? 0);
@@ -328,6 +387,38 @@ function mapEmployeePaymentAllocation(
   };
 }
 
+function mapPendingOrderCost(
+  row: PendingOrderCostRow,
+  dealers: Dealer[] = [],
+  statements: Statement[] = [],
+): PendingOrderCost {
+  const dealer = dealerBySupabaseId(dealers).get(row.dealer_id);
+  const statement = row.statement_id
+    ? statements.find((item) => (item.supabaseId ?? item.id) === row.statement_id)
+    : null;
+
+  return {
+    id: row.id,
+    supabaseId: row.id,
+    dealerId: dealer?.id ?? row.dealer_id,
+    statementId: row.statement_id ? statement?.id ?? row.statement_id : null,
+    orderCode: row.order_code,
+    costScope: row.cost_scope,
+    estimatedPrintingCost: toOptionalNumber(row.estimated_printing_cost),
+    estimatedShippingCost: toOptionalNumber(row.estimated_shipping_cost),
+    finalPrintingCost: toOptionalNumber(row.final_printing_cost),
+    finalShippingCost: toOptionalNumber(row.final_shipping_cost),
+    currency: row.currency,
+    exchangeRateToUsd: toNumber(row.exchange_rate_to_usd),
+    note: row.note,
+    status: row.status,
+    createdBy: row.created_by,
+    resolvedAt: row.resolved_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 async function currentUserId() {
   if (!supabase) return null;
   const { data, error } = await supabase.auth.getUser();
@@ -455,6 +546,181 @@ export async function fetchTransactions(dealers: Dealer[]): Promise<SettlementTr
 
   if (error) throw error;
   return ((data ?? []) as TransactionRow[]).map((row) => mapTransaction(row, dealers));
+}
+
+const pendingOrderCostSelect =
+  'id,dealer_id,statement_id,order_code,cost_scope,estimated_printing_cost,estimated_shipping_cost,final_printing_cost,final_shipping_cost,currency,exchange_rate_to_usd,note,status,created_by,resolved_at,created_at,updated_at';
+
+const pendingOrderCostPatch = (updates: PendingOrderCostUpdateInput) => ({
+  ...(updates.orderCode !== undefined ? { order_code: updates.orderCode } : {}),
+  ...(updates.costScope !== undefined ? { cost_scope: updates.costScope } : {}),
+  ...(updates.estimatedPrintingCost !== undefined ? { estimated_printing_cost: updates.estimatedPrintingCost } : {}),
+  ...(updates.estimatedShippingCost !== undefined ? { estimated_shipping_cost: updates.estimatedShippingCost } : {}),
+  ...(updates.finalPrintingCost !== undefined ? { final_printing_cost: updates.finalPrintingCost } : {}),
+  ...(updates.finalShippingCost !== undefined ? { final_shipping_cost: updates.finalShippingCost } : {}),
+  ...(updates.currency !== undefined ? { currency: updates.currency } : {}),
+  ...(updates.exchangeRateToUsd !== undefined ? { exchange_rate_to_usd: updates.exchangeRateToUsd } : {}),
+  ...(updates.note !== undefined ? { note: updates.note } : {}),
+  ...(updates.status !== undefined ? { status: updates.status } : {}),
+  ...(updates.resolvedAt !== undefined ? { resolved_at: updates.resolvedAt } : {}),
+});
+
+export async function fetchPendingOrderCosts(
+  dealers: Dealer[],
+  statements: Statement[] = [],
+): Promise<PendingOrderCost[]> {
+  if (!supabase) return [];
+
+  const { data, error } = await supabase
+    .from('pending_order_costs')
+    .select(pendingOrderCostSelect)
+    .order('created_at', { ascending: true });
+
+  if (error) throw error;
+  return ((data ?? []) as PendingOrderCostRow[]).map((row) => mapPendingOrderCost(row, dealers, statements));
+}
+
+export async function createPendingOrderCost(input: PendingOrderCostInput): Promise<PendingOrderCost> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+  const userId = await currentUserId();
+
+  const { data, error } = await supabase
+    .from('pending_order_costs')
+    .insert({
+      dealer_id: input.dealer.supabaseId ?? input.dealer.id,
+      statement_id: input.statement ? input.statement.supabaseId ?? input.statement.id : null,
+      order_code: input.orderCode,
+      cost_scope: input.costScope,
+      estimated_printing_cost: input.estimatedPrintingCost ?? null,
+      estimated_shipping_cost: input.estimatedShippingCost ?? null,
+      currency: input.currency,
+      exchange_rate_to_usd: input.exchangeRateToUsd,
+      note: input.note || null,
+      status: 'pending',
+      created_by: userId,
+    })
+    .select(pendingOrderCostSelect)
+    .single();
+
+  if (error) throw error;
+  return mapPendingOrderCost(data as PendingOrderCostRow, [input.dealer], input.statement ? [input.statement] : []);
+}
+
+export async function updatePendingOrderCost(
+  pendingCostId: string,
+  updates: PendingOrderCostUpdateInput,
+  dealers: Dealer[] = [],
+  statements: Statement[] = [],
+): Promise<PendingOrderCost> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+
+  const { data, error } = await supabase
+    .from('pending_order_costs')
+    .update(pendingOrderCostPatch(updates))
+    .eq('id', pendingCostId)
+    .select(pendingOrderCostSelect)
+    .single();
+
+  if (error) throw error;
+  return mapPendingOrderCost(data as PendingOrderCostRow, dealers, statements);
+}
+
+export const cancelPendingOrderCost = (
+  pendingCostId: string,
+  dealers: Dealer[] = [],
+  statements: Statement[] = [],
+) => updatePendingOrderCost(pendingCostId, { status: 'cancelled' }, dealers, statements);
+
+const getResolvedStatus = (
+  scope: PendingOrderCostScope,
+  finalPrintingCost?: number | null,
+  finalShippingCost?: number | null,
+): PendingOrderCostStatus => {
+  const printingResolved = finalPrintingCost !== null && finalPrintingCost !== undefined;
+  const shippingResolved = finalShippingCost !== null && finalShippingCost !== undefined;
+
+  if (scope === 'printing') return printingResolved ? 'resolved' : 'pending';
+  if (scope === 'shipping') return shippingResolved ? 'resolved' : 'pending';
+  if (printingResolved && shippingResolved) return 'resolved';
+  if (printingResolved || shippingResolved) return 'partially_resolved';
+  return 'pending';
+};
+
+export async function resolvePendingOrderCost({
+  pendingCost,
+  dealer,
+  statement,
+  finalPrintingCost,
+  finalShippingCost,
+  currency,
+  exchangeRateToUsd,
+}: ResolvePendingOrderCostInput): Promise<{
+  pendingCost: PendingOrderCost;
+  transactions: SettlementTransaction[];
+}> {
+  const createdTransactions: SettlementTransaction[] = [];
+  const transactionDate = new Date().toISOString().slice(0, 10);
+
+  if ((finalPrintingCost ?? 0) > 0) {
+    const usdAmount = roundMoney((finalPrintingCost ?? 0) * exchangeRateToUsd);
+    createdTransactions.push(
+      await createTransaction({
+        dealer,
+        statement,
+        role: 'admin',
+        input: {
+          date: transactionDate,
+          type: 'printing_cost',
+          amount: usdAmount,
+          originalAmount: finalPrintingCost ?? 0,
+          originalCurrency: currency,
+          exchangeRateToUsd,
+          usdAmount,
+          orderCode: pendingCost.orderCode,
+          description: `Resolved pending printing cost for ${pendingCost.orderCode}`,
+        },
+      }),
+    );
+  }
+
+  if ((finalShippingCost ?? 0) > 0) {
+    const usdAmount = roundMoney((finalShippingCost ?? 0) * exchangeRateToUsd);
+    createdTransactions.push(
+      await createTransaction({
+        dealer,
+        statement,
+        role: 'admin',
+        input: {
+          date: transactionDate,
+          type: 'shipping_cost',
+          amount: usdAmount,
+          originalAmount: finalShippingCost ?? 0,
+          originalCurrency: currency,
+          exchangeRateToUsd,
+          usdAmount,
+          orderCode: pendingCost.orderCode,
+          description: `Resolved pending shipping cost for ${pendingCost.orderCode}`,
+        },
+      }),
+    );
+  }
+
+  const status = getResolvedStatus(pendingCost.costScope, finalPrintingCost, finalShippingCost);
+  const updated = await updatePendingOrderCost(
+    pendingCost.supabaseId ?? pendingCost.id,
+    {
+      finalPrintingCost: finalPrintingCost ?? null,
+      finalShippingCost: finalShippingCost ?? null,
+      currency,
+      exchangeRateToUsd,
+      status,
+      resolvedAt: status === 'resolved' ? new Date().toISOString() : null,
+    },
+    [dealer],
+    [statement],
+  );
+
+  return { pendingCost: updated, transactions: createdTransactions };
 }
 
 export async function createTransaction({
