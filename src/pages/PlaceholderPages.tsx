@@ -710,6 +710,12 @@ export function DealerProfilePage({
 
       <InfoCallout>{platformPayoutHelper}</InfoCallout>
 
+      {role === 'employee' && (
+        <InfoCallout>
+          Statements are created by admins. Once a statement exists, you can submit transactions for review.
+        </InfoCallout>
+      )}
+
       {role === 'admin' && (
         <div className="grid gap-5 xl:grid-cols-3">
           <SectionCard title="New Statement" subtitle="Create a monthly statement for this dealer.">
@@ -895,21 +901,27 @@ export function DealerProfilePage({
       </SectionCard>
 
       <SectionCard title="Statements" subtitle="Statement-level payout, receivable, payment, and remaining balance review.">
-        <DataTable>
-          <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-4 py-3">Month</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3 text-right">Platform Payout</th>
-              <th className="px-4 py-3 text-right">Company Share</th>
-              <th className="px-4 py-3 text-right">Dealer Receivable</th>
-              <th className="px-4 py-3 text-right">Paid</th>
-              <th className="px-4 py-3 text-right">Remaining</th>
-              <th className="px-4 py-3 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {dealerStatements.map((statement) => {
+        {role === 'employee' && dealerStatements.length === 0 ? (
+          <EmptyState
+            title="No statement is available for this dealer yet."
+            description="Please ask an admin to create the monthly statement before adding transactions."
+          />
+        ) : (
+          <DataTable>
+            <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Month</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3 text-right">Platform Payout</th>
+                <th className="px-4 py-3 text-right">Company Share</th>
+                <th className="px-4 py-3 text-right">Dealer Receivable</th>
+                <th className="px-4 py-3 text-right">Paid</th>
+                <th className="px-4 py-3 text-right">Remaining</th>
+                <th className="px-4 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dealerStatements.map((statement) => {
               const totals = calculateStatementTotals(
                 statement,
                 transactions,
@@ -980,8 +992,9 @@ export function DealerProfilePage({
                 </tr>
               );
             })}
-          </tbody>
-        </DataTable>
+            </tbody>
+          </DataTable>
+        )}
       </SectionCard>
 
       {editingAgreement && role === 'admin' && (
@@ -2125,10 +2138,12 @@ export function AssignmentsPage({
   employees,
   dealers,
   onUpdateAssignment,
+  onCreateAssignment,
 }: {
   employees: Employee[];
   dealers: Dealer[];
   onUpdateAssignment: (employeeId: string, assignment: Assignment) => Promise<void> | void;
+  onCreateAssignment: (employeeId: string, assignment: Assignment) => Promise<void> | void;
 }) {
   const [editing, setEditing] = useState<null | {
     employeeId: string;
@@ -2137,7 +2152,19 @@ export function AssignmentsPage({
     assignment: Assignment;
     rate: string;
   }>(null);
+  const [creating, setCreating] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    employeeId: '',
+    dealerId: '',
+    rate: '',
+    canViewTransactions: true,
+    canAddTransactions: true,
+    canEditTransactions: false,
+    canViewCommission: true,
+    status: 'active' as AssignmentStatus,
+  });
   const [error, setError] = useState('');
+  const [createError, setCreateError] = useState('');
   const [saving, setSaving] = useState(false);
   const rows = employees.flatMap((employee) =>
     employee.assignments.map((assignment) => ({
@@ -2157,6 +2184,21 @@ export function AssignmentsPage({
       assignment: { ...row.assignment },
       rate: String(row.assignment.commissionRatePct),
     });
+  };
+
+  const openCreateAssignment = () => {
+    setCreateError('');
+    setCreateForm({
+      employeeId: employees[0]?.id || '',
+      dealerId: '',
+      rate: '',
+      canViewTransactions: true,
+      canAddTransactions: true,
+      canEditTransactions: false,
+      canViewCommission: true,
+      status: 'active',
+    });
+    setCreating(true);
   };
 
   const updateEditingAssignment = (patch: Partial<Assignment>) => {
@@ -2196,11 +2238,71 @@ export function AssignmentsPage({
     }
   };
 
+  const saveNewAssignment = async () => {
+    const employee = employees.find((row) => row.id === createForm.employeeId);
+    const dealer = dealers.find((row) => row.id === createForm.dealerId);
+    const trimmedRate = createForm.rate.trim();
+
+    if (!employee) {
+      setCreateError('Employee is required.');
+      return;
+    }
+    if (!dealer) {
+      setCreateError('Store / dealer is required.');
+      return;
+    }
+    if (!trimmedRate) {
+      setCreateError('Commission rate is required.');
+      return;
+    }
+
+    const commissionRatePct = Number(trimmedRate);
+    if (!Number.isFinite(commissionRatePct) || commissionRatePct < 0 || commissionRatePct > 100) {
+      setCreateError('Commission rate must be a number between 0 and 100.');
+      return;
+    }
+
+    const duplicate = employee.assignments.some(
+      (assignment) => assignment.storeId === dealer.storeId || assignment.dealerId === dealer.id,
+    );
+    if (duplicate) {
+      setCreateError('This employee is already assigned to this store.');
+      return;
+    }
+
+    setSaving(true);
+    setCreateError('');
+
+    try {
+      await onCreateAssignment(employee.id, {
+        storeId: dealer.storeId,
+        dealerId: dealer.id,
+        commissionRatePct,
+        canViewTransactions: createForm.canViewTransactions,
+        canAddTransactions: createForm.canAddTransactions,
+        canEditTransactions: createForm.canEditTransactions,
+        canViewCommission: createForm.canViewCommission,
+        status: createForm.status,
+      });
+      setCreating(false);
+    } catch (saveError) {
+      const maybe = saveError as { message?: string };
+      setCreateError(maybe?.message || 'Assignment could not be created.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <PageShell title="Assignments" subtitle="Current mock store access and commission assignments">
       <SectionCard
         title="Assignment Matrix"
         subtitle="Rate changes apply to future generated commissions only; existing commission rows are not regenerated automatically."
+        action={
+          <Button variant="primary" onClick={openCreateAssignment}>
+            New Assignment
+          </Button>
+        }
       >
         <DataTable>
           <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">
@@ -2243,6 +2345,121 @@ export function AssignmentsPage({
           </tbody>
         </DataTable>
       </SectionCard>
+
+      {creating && (
+        <div className="fixed inset-0 z-30 flex items-center justify-center bg-slate-950/30 px-4 py-6">
+          <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+            <div className="border-b border-slate-200 bg-gradient-to-b from-white to-slate-50 px-5 py-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-indigoBrand">
+                Assignment Management
+              </p>
+              <h3 className="mt-1 text-lg font-semibold text-slate-950">New Assignment</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Assign an employee to a dealer/store with commission and transaction permissions.
+              </p>
+            </div>
+
+            <div className="space-y-5 p-5">
+              {createError && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+                  {createError}
+                </div>
+              )}
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <FormLabel label="Employee">
+                  <select
+                    aria-label="Employee"
+                    className="h-10 w-full px-3"
+                    value={createForm.employeeId}
+                    onChange={(event) => setCreateForm({ ...createForm, employeeId: event.target.value })}
+                  >
+                    <option value="">Select employee</option>
+                    {employees.map((employee) => (
+                      <option key={employee.id} value={employee.id}>
+                        {employee.name}
+                      </option>
+                    ))}
+                  </select>
+                </FormLabel>
+
+                <FormLabel label="Store / dealer">
+                  <select
+                    aria-label="Store / dealer"
+                    className="h-10 w-full px-3"
+                    value={createForm.dealerId}
+                    onChange={(event) => setCreateForm({ ...createForm, dealerId: event.target.value })}
+                  >
+                    <option value="">Select store</option>
+                    {dealers.map((dealer) => (
+                      <option key={dealer.id} value={dealer.id}>
+                        {dealer.storeName || dealer.name}
+                      </option>
+                    ))}
+                  </select>
+                </FormLabel>
+
+                <FormLabel label="Commission rate">
+                  <input
+                    aria-label="New assignment commission rate"
+                    className="h-10 w-full px-3"
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    value={createForm.rate}
+                    onChange={(event) => setCreateForm({ ...createForm, rate: event.target.value })}
+                  />
+                </FormLabel>
+
+                <FormLabel label="Status">
+                  <select
+                    aria-label="New assignment status"
+                    className="h-10 w-full px-3"
+                    value={createForm.status}
+                    onChange={(event) =>
+                      setCreateForm({ ...createForm, status: event.target.value as AssignmentStatus })
+                    }
+                  >
+                    <option value="active">active</option>
+                    <option value="inactive">inactive</option>
+                  </select>
+                </FormLabel>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                {[
+                  ['Can view transactions', 'canViewTransactions'],
+                  ['Can add transactions', 'canAddTransactions'],
+                  ['Can edit transactions', 'canEditTransactions'],
+                  ['Can view commission', 'canViewCommission'],
+                ].map(([label, key]) => (
+                  <label
+                    key={key}
+                    className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700"
+                  >
+                    <span>{label}</span>
+                    <input
+                      aria-label={`New assignment ${label}`}
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-slate-300 text-indigoBrand"
+                      checked={Boolean(createForm[key as keyof typeof createForm])}
+                      onChange={(event) =>
+                        setCreateForm({ ...createForm, [key]: event.target.checked })
+                      }
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4">
+              <Button onClick={() => setCreating(false)}>Cancel</Button>
+              <Button variant="primary" onClick={saveNewAssignment}>
+                {saving ? 'Creating...' : 'Create Assignment'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {editing && (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-slate-950/30 px-4 py-6">

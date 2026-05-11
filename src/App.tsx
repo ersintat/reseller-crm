@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
-import { type SetStateAction, useEffect, useMemo, useState } from 'react';
+import { type SetStateAction, useEffect, useMemo, useRef, useState } from 'react';
 import { AppLayout } from './components/layout/AppLayout';
 import { dealers, employees, initialStatements, initialTransactions } from './data/mockData';
 import { Assignment, Dealer, DealerPayment, DealerPaymentAllocation, Employee, EmployeeCommission, EmployeePayment, EmployeePaymentAllocation, Role, SettlementTransaction, Statement, TransactionStatus } from './types';
@@ -11,6 +11,7 @@ import { generateEmployeeCommissionsForStatements } from './lib/statementCalcula
 import { useAuth } from './auth/AuthContext';
 import { LoginPage, SignupPage } from './pages/AuthPages';
 import {
+  createEmployeeStoreAssignment,
   DealerUpdate,
   EmployeeAssignmentState,
   fetchFinancialReferenceData,
@@ -176,6 +177,7 @@ export function App() {
   const [dealerPaymentError, setDealerPaymentError] = useState('');
   const [employeeSettlementLoading, setEmployeeSettlementLoading] = useState(false);
   const [employeeSettlementError, setEmployeeSettlementError] = useState('');
+  const lastCommissionSyncErrorRef = useRef('');
 
   useEffect(() => {
     if (!auth.authEnabled || !auth.user) {
@@ -491,11 +493,17 @@ export function App() {
       .then((synced) => {
         if (!active) return;
         setSupabaseEmployeeCommissions((previous) => mergeEmployeeCommissions(previous ?? [], synced));
+        lastCommissionSyncErrorRef.current = '';
+        setEmployeeSettlementError('');
       })
       .catch((error) => {
         if (!active) return;
         console.warn('Failed to sync Supabase employee commissions.', error);
-        setEmployeeSettlementError(friendlySupabaseError(error, 'Employee commissions could not be generated'));
+        const friendlyMessage = 'Commission sync could not be completed. Please refresh or try again.';
+        if (lastCommissionSyncErrorRef.current !== friendlyMessage) {
+          lastCommissionSyncErrorRef.current = friendlyMessage;
+          setEmployeeSettlementError(friendlyMessage);
+        }
       });
 
     return () => {
@@ -772,6 +780,84 @@ export function App() {
     });
   };
 
+  const createAssignment = async (employeeId: string, nextAssignment: Assignment) => {
+    const employeeForAssignment = employeesWithAssignments.find((row) => row.id === employeeId);
+    const dealerForAssignment = activeDealers.find((row) => row.id === nextAssignment.dealerId || row.storeId === nextAssignment.storeId);
+
+    if (!employeeForAssignment || !dealerForAssignment) {
+      setFlash('Assignment could not be created: employee or dealer was not found.');
+      throw new Error('Employee or dealer was not found.');
+    }
+
+    const duplicate = employeeForAssignment.assignments.some(
+      (assignment) =>
+        assignment.storeId === dealerForAssignment.storeId ||
+        assignment.dealerId === dealerForAssignment.id,
+    );
+    if (duplicate) {
+      setFlash('This employee is already assigned to this store.');
+      throw new Error('This employee is already assigned to this store.');
+    }
+
+    const normalizedAssignment = normalizeAssignment({
+      ...nextAssignment,
+      storeId: dealerForAssignment.storeId,
+      dealerId: dealerForAssignment.id,
+    });
+
+    if (usingSupabaseReferenceData) {
+      if (!employeeForAssignment.supabaseId || !dealerForAssignment.supabaseId) {
+        setFlash('Assignment could not be created: missing Supabase ids.');
+        throw new Error('Missing Supabase ids.');
+      }
+
+      try {
+        const created = await createEmployeeStoreAssignment({
+          employeeId: employeeForAssignment.supabaseId,
+          dealerId: dealerForAssignment.supabaseId,
+          commissionRatePct: normalizedAssignment.commissionRatePct,
+          canViewTransactions: normalizedAssignment.canViewTransactions,
+          canAddTransactions: normalizedAssignment.canAddTransactions,
+          canEditTransactions: normalizedAssignment.canEditTransactions,
+          canViewCommission: normalizedAssignment.canViewCommission,
+          status: normalizedAssignment.status,
+        });
+        const mergedAssignment = normalizeAssignment({
+          ...normalizedAssignment,
+          ...created,
+          storeId: dealerForAssignment.storeId,
+          dealerId: dealerForAssignment.id,
+        });
+
+        const addToState = (previous: EmployeeAssignmentState | null): EmployeeAssignmentState => {
+          const currentState = previous ?? {};
+          return {
+            ...currentState,
+            [employeeId]: [...(currentState[employeeId] || []), mergedAssignment],
+          };
+        };
+
+        setSupabaseAssignmentState(addToState);
+        setSupabaseReferenceAssignments(addToState);
+        setFlash('Assignment created.');
+      } catch (error) {
+        const maybe = error as { code?: string };
+        const message = maybe?.code === '23505'
+          ? 'This employee is already assigned to this store.'
+          : friendlySupabaseError(error, 'Assignment could not be created');
+        setFlash(message);
+        throw new Error(message);
+      }
+      return;
+    }
+
+    setEmployeeAssignments((previous) => ({
+      ...previous,
+      [employeeId]: [...(previous[employeeId] || []), normalizedAssignment],
+    }));
+    setFlash('Assignment created.');
+  };
+
   const updateDealer = async (dealerId: string, updates: DealerUpdate) => {
     const applyDealerUpdate = (current: Dealer, patch: Dealer): Dealer => ({
       ...current,
@@ -898,7 +984,7 @@ export function App() {
         <Route path="transactions" element={role === 'admin' ? <TransactionsPage role={role} assignedStoreIds={assignedStoreIds} dealers={activeDealers} transactions={activeTransactions} setTransactions={setActiveTransactions} setFlash={setFlash} onUpdateTransactionStatus={usingSupabaseActivityData ? handleTransactionStatus : undefined} /> : <Navigate to="/" replace />} />
         <Route path="employees" element={role === 'admin' ? <EmployeesPage employees={employeesWithAssignments} dealers={activeDealers} commissions={activeEmployeeCommissions} allocations={activeEmployeePaymentAllocations} /> : <Navigate to="/" replace />} />
         <Route path="employees/:employeeId" element={<EmployeeProfilePage role={role} employees={employeesWithAssignments} dealers={activeDealers} commissions={activeEmployeeCommissions} payments={activeEmployeePayments} allocations={activeEmployeePaymentAllocations} setPayments={setEmployeePayments} setAllocations={setEmployeePaymentAllocations} setCommissions={setEmployeeCommissions} setFlash={setFlash} onRecordEmployeePayment={usingSupabaseEmployeeSettlementData ? handleRecordEmployeePayment : undefined} />} />
-        <Route path="assignments" element={role === 'admin' ? <AssignmentsPage employees={employeesWithAssignments} dealers={activeDealers} onUpdateAssignment={updateAssignment} /> : <Navigate to="/" replace />} />
+        <Route path="assignments" element={role === 'admin' ? <AssignmentsPage employees={employeesWithAssignments} dealers={activeDealers} onUpdateAssignment={updateAssignment} onCreateAssignment={createAssignment} /> : <Navigate to="/" replace />} />
         <Route path="settings" element={role === 'admin' ? <SettingsPage onResetDemoData={resetDemoData} dataModeLabel={referenceStatusLabel} /> : <Navigate to="/" replace />} />
         <Route path="my-commissions" element={<MyCommissionsPage role={role} employee={employee} dealers={activeDealers} commissions={role === 'employee' ? employeeVisibleCommissions : activeEmployeeCommissions} payments={activeEmployeePayments} allocations={activeEmployeePaymentAllocations} />} />
       </Route>

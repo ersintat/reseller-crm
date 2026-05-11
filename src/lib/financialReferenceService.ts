@@ -51,6 +51,17 @@ type AssignmentUpdate = Pick<
   | 'status'
 >;
 
+export interface AssignmentCreateInput {
+  employeeId: string;
+  dealerId: string;
+  commissionRatePct: number;
+  canViewTransactions: boolean;
+  canAddTransactions: boolean;
+  canEditTransactions: boolean;
+  canViewCommission: boolean;
+  status: Assignment['status'];
+}
+
 export type DealerUpdate = Pick<
   Dealer,
   | 'name'
@@ -205,6 +216,44 @@ export async function updateEmployeeStoreAssignment(
     .from('employee_store_assignments')
     .update(patch)
     .eq('id', assignmentId)
+    .select(
+      'id,employee_id,dealer_id,commission_rate,can_view_transactions,can_add_transactions,can_edit_transactions,can_view_commission,status',
+    )
+    .single();
+
+  if (error) throw error;
+
+  const row = data as AssignmentRow;
+  return {
+    storeId: row.dealer_id,
+    dealerId: row.dealer_id,
+    commissionRatePct: toNumber(row.commission_rate),
+    canViewTransactions: row.can_view_transactions,
+    canAddTransactions: row.can_add_transactions,
+    canEditTransactions: row.can_edit_transactions,
+    canViewCommission: row.can_view_commission,
+    status: row.status,
+    supabaseId: row.id,
+  };
+}
+
+export async function createEmployeeStoreAssignment(
+  input: AssignmentCreateInput,
+): Promise<Assignment> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+
+  const { data, error } = await supabase
+    .from('employee_store_assignments')
+    .insert({
+      employee_id: input.employeeId,
+      dealer_id: input.dealerId,
+      commission_rate: input.commissionRatePct,
+      can_view_transactions: input.canViewTransactions,
+      can_add_transactions: input.canAddTransactions,
+      can_edit_transactions: input.canEditTransactions,
+      can_view_commission: input.canViewCommission,
+      status: input.status,
+    })
     .select(
       'id,employee_id,dealer_id,commission_rate,can_view_transactions,can_add_transactions,can_edit_transactions,can_view_commission,status',
     )
