@@ -274,12 +274,52 @@ function formatSecondaryCurrencyAmount(amount: number, currency: SupportedCurren
   return `≈ ${formatCurrencyAmount(amount, currency)} ${currency}`;
 }
 
-function secondaryText(value: { amount: number; mixed: boolean } | null, currency: SupportedCurrency, primaryUsdValue = 0) {
+function secondaryText(value: { amount: number; hasEstimate: boolean } | null, currency: SupportedCurrency, primaryUsdValue = 0) {
   if (!value) {
     return Math.abs(primaryUsdValue) < 0.001 ? formatSecondaryCurrencyAmount(0, currency) : undefined;
   }
-  if (value.mixed) return 'Mixed currencies';
+  if (!value.hasEstimate && Math.abs(primaryUsdValue) >= 0.001) return undefined;
   return formatSecondaryCurrencyAmount(value.amount, currency);
+}
+
+function getUsdEquivalent(row: { amount: number; usdAmount?: number }) {
+  return row.usdAmount ?? row.amount;
+}
+
+function getStoredTargetCurrencyRate(
+  rows: Array<{ originalCurrency?: string; originalAmount?: number; exchangeRateToUsd?: number; amount: number; usdAmount?: number }>,
+  currency: SupportedCurrency,
+) {
+  const matching = rows.filter(
+    (row) =>
+      getOriginalCurrency(row) === currency &&
+      (row.originalAmount ?? 0) > 0 &&
+      (row.exchangeRateToUsd ?? 0) > 0,
+  );
+  if (matching.length === 0) return null;
+
+  const totals = matching.reduce(
+    (summary, row) => ({
+      original: summary.original + (row.originalAmount ?? 0),
+      usd: summary.usd + getUsdEquivalent(row),
+    }),
+    { original: 0, usd: 0 },
+  );
+  return totals.original > 0 ? totals.usd / totals.original : null;
+}
+
+function estimateRowInDealerCurrency(
+  row: { originalCurrency?: string; originalAmount?: number; exchangeRateToUsd?: number; amount: number; usdAmount?: number },
+  currency: SupportedCurrency,
+  targetRateToUsd: number | null,
+) {
+  const originalCurrency = getOriginalCurrency(row);
+  if (originalCurrency === currency) {
+    if (row.originalAmount !== undefined) return row.originalAmount;
+    const rate = row.exchangeRateToUsd ?? targetRateToUsd;
+    return rate && rate > 0 ? getUsdEquivalent(row) / rate : null;
+  }
+  return targetRateToUsd && targetRateToUsd > 0 ? getUsdEquivalent(row) / targetRateToUsd : null;
 }
 
 function calculateOriginalStatementTotals(
@@ -291,50 +331,61 @@ function calculateOriginalStatementTotals(
   const scoped = transactions.filter(
     (transaction) => transaction.statementId === statement.id && transaction.status === 'confirmed',
   );
-  if (scoped.length === 0) return null;
-  if (scoped.some((transaction) => getOriginalCurrency(transaction) !== currency)) {
-    return { mixed: true, totalBankPayouts: 0, companyShare: 0, dealerReceivable: 0 };
-  }
+  const dealerRows = transactions.filter(
+    (transaction) => transaction.dealerId === dealer.id && transaction.status === 'confirmed',
+  );
+  const periodRate = getStoredTargetCurrencyRate(scoped, currency);
+  const dealerRate = periodRate ?? getStoredTargetCurrencyRate(dealerRows, currency);
 
-  const amountFor = (transaction: SettlementTransaction) => transaction.originalAmount ?? transaction.amount;
+  const amountFor = (transaction: SettlementTransaction) =>
+    estimateRowInDealerCurrency(transaction, currency, dealerRate);
   const sumType = (type: TransactionType) =>
     scoped
       .filter((transaction) => transaction.type === type)
-      .reduce((total, transaction) => total + amountFor(transaction), 0);
+      .reduce((total, transaction) => total + (amountFor(transaction) ?? 0), 0);
   const signedAdjustment = (scope: ManualAdjustmentScope) =>
     scoped
       .filter((transaction) => transaction.type === 'manual_adjustment' && transaction.adjustmentScope === scope)
       .reduce(
         (total, transaction) =>
-          total + (transaction.adjustmentDirection === 'decrease' ? -amountFor(transaction) : amountFor(transaction)),
+          total +
+          (transaction.adjustmentDirection === 'decrease'
+            ? -(amountFor(transaction) ?? 0)
+            : (amountFor(transaction) ?? 0)),
         0,
       );
+  const hasEstimate = scoped.some((transaction) => amountFor(transaction) !== null);
 
   const totalBankPayouts = sumType('bank_payout');
   const totalStoreExpenses = sumType('store_expense');
   const totalPrintingCosts = sumType('printing_cost');
   const totalShippingCosts = sumType('shipping_cost');
   const shareableNet = totalBankPayouts - totalStoreExpenses + signedAdjustment('shareable_net');
+  const dealerShare = shareableNet * dealer.dealerSharePercentage;
   const companyShare = shareableNet * dealer.companySharePercentage;
   const dealerReceivable =
     companyShare + totalPrintingCosts + totalShippingCosts + signedAdjustment('dealer_receivable_only');
 
-  return { mixed: false, totalBankPayouts, companyShare, dealerReceivable };
+  return { hasEstimate, totalBankPayouts, dealerShare, companyShare, dealerReceivable };
 }
 
 function getDealerPaymentSecondary(payments: DealerPayment[], currency: SupportedCurrency) {
-  if (payments.length === 0) return null;
-  if (payments.some((payment) => getOriginalCurrency(payment) !== currency)) return { amount: 0, mixed: true };
+  if (payments.length === 0) return { amount: 0, hasEstimate: true };
+  const targetRate = getStoredTargetCurrencyRate(payments, currency);
+  const amounts = payments
+    .map((payment) => estimateRowInDealerCurrency(payment, currency, targetRate))
+    .filter((amount): amount is number => amount !== null);
   return {
-    amount: payments.reduce((total, payment) => total + (payment.originalAmount ?? payment.amount), 0),
-    mixed: false,
+    amount: amounts.reduce((total, amount) => total + amount, 0),
+    hasEstimate: amounts.length > 0,
   };
 }
 
 function getPaymentSecondary(payment: DealerPayment | undefined, currency: SupportedCurrency) {
-  if (!payment) return null;
-  if (getOriginalCurrency(payment) !== currency) return { amount: 0, mixed: true };
-  return { amount: payment.originalAmount ?? payment.amount, mixed: false };
+  if (!payment) return { amount: 0, hasEstimate: true };
+  const targetRate = getStoredTargetCurrencyRate([payment], currency);
+  const amount = estimateRowInDealerCurrency(payment, currency, targetRate);
+  return { amount: amount ?? 0, hasEstimate: amount !== null };
 }
 
 function InfoCallout({ children }: { children: React.ReactNode }) {
@@ -808,8 +859,8 @@ function StatementBreakdown({ statement, dealer, transactions, allocations }: {
   const totals = calculateStatementTotals(statement, transactions, dealer, paid);
   const rows = [
     ['Platform payout', totals.total_bank_payouts],
-    [`Dealer share (${formatPercent(dealer.dealerSharePercentage)})`, totals.dealer_share_amount],
-    [`Company share (${formatPercent(dealer.companySharePercentage)})`, totals.company_share_amount],
+    [`Dealer Share Amount (${formatPercent(dealer.dealerSharePercentage)})`, totals.dealer_share_amount],
+    [`Company Share Amount (${formatPercent(dealer.companySharePercentage)})`, totals.company_share_amount],
     ['Printing cost', totals.total_printing_costs],
     ['Shipping cost', totals.total_shipping_costs],
     ['Dealer receivable', totals.dealer_receivable_amount],
@@ -995,6 +1046,10 @@ export function DealerProfilePage({
     (total, statement) => total + getEffectiveStatementPaidAmount(statement, allocations),
     0,
   );
+  const dealerRetainedShare = dealerStatements.reduce((total, statement) => {
+    const paid = getEffectiveStatementPaidAmount(statement, allocations);
+    return total + calculateStatementTotals(statement, transactions, dealer, paid).dealer_share_amount;
+  }, 0);
   const dealerPayments = payments.filter((payment) => payment.dealerId === dealer.id);
   const lastPayment = payments
     .filter((payment) => payment.dealerId === dealer.id)
@@ -1006,26 +1061,31 @@ export function DealerProfilePage({
       )
     : [];
   const secondaryReceivableTotal = dealerSecondaryCurrency && secondaryStatementTotals.length > 0
-    ? secondaryStatementTotals.some((row) => !row || row.mixed)
-      ? { amount: 0, mixed: true }
-      : {
-          amount: secondaryStatementTotals.reduce((total, row) => total + (row?.dealerReceivable ?? 0), 0),
-          mixed: false,
-        }
+    ? {
+        amount: secondaryStatementTotals.reduce((total, row) => total + (row?.dealerReceivable ?? 0), 0),
+        hasEstimate: secondaryStatementTotals.some((row) => row?.hasEstimate),
+      }
+    : null;
+  const secondaryDealerRetainedShare = dealerSecondaryCurrency && secondaryStatementTotals.length > 0
+    ? {
+        amount: secondaryStatementTotals.reduce((total, row) => total + (row?.dealerShare ?? 0), 0),
+        hasEstimate: secondaryStatementTotals.some((row) => row?.hasEstimate),
+      }
     : null;
   const secondaryCurrentReceivable = dealerSecondaryCurrency && currentMonthStatement
     ? (() => {
         const current = calculateOriginalStatementTotals(currentMonthStatement, dealer, transactions, dealerSecondaryCurrency);
         if (!current) return null;
-        return current.mixed ? { amount: 0, mixed: true } : { amount: current.dealerReceivable, mixed: false };
+        return { amount: current.dealerReceivable, hasEstimate: current.hasEstimate };
       })()
     : null;
   const secondaryPaid = dealerSecondaryCurrency ? getDealerPaymentSecondary(dealerPayments, dealerSecondaryCurrency) : null;
-  const secondaryOpenBalance = dealerSecondaryCurrency && secondaryReceivableTotal && secondaryPaid && !secondaryReceivableTotal.mixed && !secondaryPaid.mixed
-    ? { amount: secondaryReceivableTotal.amount - secondaryPaid.amount, mixed: false }
-    : secondaryReceivableTotal?.mixed || secondaryPaid?.mixed
-      ? { amount: 0, mixed: true }
-      : secondaryReceivableTotal;
+  const secondaryOpenBalance = dealerSecondaryCurrency && secondaryReceivableTotal && secondaryPaid
+    ? {
+        amount: secondaryReceivableTotal.amount - secondaryPaid.amount,
+        hasEstimate: secondaryReceivableTotal.hasEstimate || secondaryPaid.hasEstimate,
+      }
+    : secondaryReceivableTotal;
   const secondaryLastPayment = dealerSecondaryCurrency ? getPaymentSecondary(lastPayment, dealerSecondaryCurrency) : null;
   const paymentUsdPreview = calculateUsdPreview(payForm.amount, payForm.currency, payForm.exchangeRateToUsd);
   let running = 0;
@@ -1225,7 +1285,7 @@ export function DealerProfilePage({
 
   return (
     <PageShell title="Dealer Profile" subtitle={`${dealer.name} account overview and settlement ledger`}>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
         <SummaryCard
           label="Open Balance"
           value={formatUsd(openBalance)}
@@ -1237,6 +1297,12 @@ export function DealerProfilePage({
           value={formatUsd(currentMonthReceivable)}
           secondary={dealerSecondaryCurrency ? secondaryText(secondaryCurrentReceivable, dealerSecondaryCurrency, currentMonthReceivable) : undefined}
           helper="Current period: April 2026."
+        />
+        <SummaryCard
+          label="Dealer Retained Share"
+          value={formatUsd(dealerRetainedShare)}
+          secondary={dealerSecondaryCurrency ? secondaryText(secondaryDealerRetainedShare, dealerSecondaryCurrency, dealerRetainedShare) : undefined}
+          helper="Dealer portion based on the agreement share."
         />
         <SummaryCard
           label="Total Paid"
@@ -1509,6 +1575,7 @@ export function DealerProfilePage({
                 <th className="px-4 py-3">Month</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3 text-right">Platform Payout</th>
+                <th className="px-4 py-3 text-right">Dealer Share</th>
                 <th className="px-4 py-3 text-right">Company Share</th>
                 <th className="px-4 py-3 text-right">Dealer Receivable</th>
                 <th className="px-4 py-3 text-right">Paid</th>
@@ -1531,6 +1598,7 @@ export function DealerProfilePage({
                     <StatusBadge status={statement.status} />
                   </td>
                   <td className="px-4 py-3 text-right">{formatUsd(totals.total_bank_payouts)}</td>
+                  <td className="px-4 py-3 text-right">{formatUsd(totals.dealer_share_amount)}</td>
                   <td className="px-4 py-3 text-right">{formatUsd(totals.company_share_amount)}</td>
                   <td className="px-4 py-3 text-right font-semibold text-slate-950">{formatUsd(totals.dealer_receivable_amount)}</td>
                   <td className="px-4 py-3 text-right text-emerald-700">{formatUsd(totals.paid_amount)}</td>
