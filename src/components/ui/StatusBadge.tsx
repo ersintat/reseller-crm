@@ -1,6 +1,6 @@
 export function StatusBadge({ status }: { status: string }) {
   const s = status.toLowerCase();
-  const tone = s.includes('paid') || s === 'closed'
+  const tone = s.includes('paid') || s === 'closed' || s === 'resolved'
     ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
     : s.includes('pending') || s.includes('draft') || s.includes('partial') || s.includes('review')
       ? 'bg-amber-50 text-amber-700 ring-amber-200'

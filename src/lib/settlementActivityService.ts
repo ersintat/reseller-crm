@@ -636,8 +636,8 @@ const getResolvedStatus = (
   finalPrintingCost?: number | null,
   finalShippingCost?: number | null,
 ): PendingOrderCostStatus => {
-  const printingResolved = finalPrintingCost !== null && finalPrintingCost !== undefined;
-  const shippingResolved = finalShippingCost !== null && finalShippingCost !== undefined;
+  const printingResolved = (finalPrintingCost ?? 0) > 0;
+  const shippingResolved = (finalShippingCost ?? 0) > 0;
 
   if (scope === 'printing') return printingResolved ? 'resolved' : 'pending';
   if (scope === 'shipping') return shippingResolved ? 'resolved' : 'pending';
@@ -660,9 +660,13 @@ export async function resolvePendingOrderCost({
 }> {
   const createdTransactions: SettlementTransaction[] = [];
   const transactionDate = new Date().toISOString().slice(0, 10);
+  const existingPrintingResolved = (pendingCost.finalPrintingCost ?? 0) > 0;
+  const existingShippingResolved = (pendingCost.finalShippingCost ?? 0) > 0;
+  const nextPrintingCost = finalPrintingCost ?? pendingCost.finalPrintingCost ?? null;
+  const nextShippingCost = finalShippingCost ?? pendingCost.finalShippingCost ?? null;
 
-  if ((finalPrintingCost ?? 0) > 0) {
-    const usdAmount = roundMoney((finalPrintingCost ?? 0) * exchangeRateToUsd);
+  if (!existingPrintingResolved && (nextPrintingCost ?? 0) > 0) {
+    const usdAmount = roundMoney((nextPrintingCost ?? 0) * exchangeRateToUsd);
     createdTransactions.push(
       await createTransaction({
         dealer,
@@ -672,7 +676,7 @@ export async function resolvePendingOrderCost({
           date: transactionDate,
           type: 'printing_cost',
           amount: usdAmount,
-          originalAmount: finalPrintingCost ?? 0,
+          originalAmount: nextPrintingCost ?? 0,
           originalCurrency: currency,
           exchangeRateToUsd,
           usdAmount,
@@ -683,8 +687,8 @@ export async function resolvePendingOrderCost({
     );
   }
 
-  if ((finalShippingCost ?? 0) > 0) {
-    const usdAmount = roundMoney((finalShippingCost ?? 0) * exchangeRateToUsd);
+  if (!existingShippingResolved && (nextShippingCost ?? 0) > 0) {
+    const usdAmount = roundMoney((nextShippingCost ?? 0) * exchangeRateToUsd);
     createdTransactions.push(
       await createTransaction({
         dealer,
@@ -694,7 +698,7 @@ export async function resolvePendingOrderCost({
           date: transactionDate,
           type: 'shipping_cost',
           amount: usdAmount,
-          originalAmount: finalShippingCost ?? 0,
+          originalAmount: nextShippingCost ?? 0,
           originalCurrency: currency,
           exchangeRateToUsd,
           usdAmount,
@@ -705,12 +709,12 @@ export async function resolvePendingOrderCost({
     );
   }
 
-  const status = getResolvedStatus(pendingCost.costScope, finalPrintingCost, finalShippingCost);
+  const status = getResolvedStatus(pendingCost.costScope, nextPrintingCost, nextShippingCost);
   const updated = await updatePendingOrderCost(
     pendingCost.supabaseId ?? pendingCost.id,
     {
-      finalPrintingCost: finalPrintingCost ?? null,
-      finalShippingCost: finalShippingCost ?? null,
+      finalPrintingCost: nextPrintingCost,
+      finalShippingCost: nextShippingCost,
       currency,
       exchangeRateToUsd,
       status,

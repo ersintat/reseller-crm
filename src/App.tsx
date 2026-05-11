@@ -608,8 +608,8 @@ export function App() {
     finalPrintingCost?: number | null,
     finalShippingCost?: number | null,
   ): PendingOrderCost['status'] => {
-    const printingResolved = finalPrintingCost !== null && finalPrintingCost !== undefined;
-    const shippingResolved = finalShippingCost !== null && finalShippingCost !== undefined;
+    const printingResolved = (finalPrintingCost ?? 0) > 0;
+    const shippingResolved = (finalShippingCost ?? 0) > 0;
     if (scope === 'printing') return printingResolved ? 'resolved' : 'pending';
     if (scope === 'shipping') return shippingResolved ? 'resolved' : 'pending';
     if (printingResolved && shippingResolved) return 'resolved';
@@ -926,8 +926,12 @@ export function App() {
         const now = new Date().toISOString();
         const transactionDate = now.slice(0, 10);
         const nextTransactions: SettlementTransaction[] = [];
-        if ((input.finalPrintingCost ?? 0) > 0) {
-          const usdAmount = Math.round(((input.finalPrintingCost ?? 0) * input.exchangeRateToUsd + Number.EPSILON) * 100) / 100;
+        const existingPrintingResolved = (input.pendingCost.finalPrintingCost ?? 0) > 0;
+        const existingShippingResolved = (input.pendingCost.finalShippingCost ?? 0) > 0;
+        const nextPrintingCost = input.finalPrintingCost ?? input.pendingCost.finalPrintingCost ?? null;
+        const nextShippingCost = input.finalShippingCost ?? input.pendingCost.finalShippingCost ?? null;
+        if (!existingPrintingResolved && (nextPrintingCost ?? 0) > 0) {
+          const usdAmount = Math.round(((nextPrintingCost ?? 0) * input.exchangeRateToUsd + Number.EPSILON) * 100) / 100;
           nextTransactions.push({
             id: `t-${Date.now()}-printing`,
             dealerId: input.dealer.id,
@@ -935,7 +939,7 @@ export function App() {
             date: transactionDate,
             type: 'printing_cost',
             amount: usdAmount,
-            originalAmount: input.finalPrintingCost ?? 0,
+            originalAmount: nextPrintingCost ?? 0,
             originalCurrency: input.currency,
             exchangeRateToUsd: input.exchangeRateToUsd,
             usdAmount,
@@ -945,8 +949,8 @@ export function App() {
             createdByRole: 'admin',
           });
         }
-        if ((input.finalShippingCost ?? 0) > 0) {
-          const usdAmount = Math.round(((input.finalShippingCost ?? 0) * input.exchangeRateToUsd + Number.EPSILON) * 100) / 100;
+        if (!existingShippingResolved && (nextShippingCost ?? 0) > 0) {
+          const usdAmount = Math.round(((nextShippingCost ?? 0) * input.exchangeRateToUsd + Number.EPSILON) * 100) / 100;
           nextTransactions.push({
             id: `t-${Date.now()}-shipping`,
             dealerId: input.dealer.id,
@@ -954,7 +958,7 @@ export function App() {
             date: transactionDate,
             type: 'shipping_cost',
             amount: usdAmount,
-            originalAmount: input.finalShippingCost ?? 0,
+            originalAmount: nextShippingCost ?? 0,
             originalCurrency: input.currency,
             exchangeRateToUsd: input.exchangeRateToUsd,
             usdAmount,
@@ -966,15 +970,15 @@ export function App() {
         }
         const status = getPendingCostStatus(
           input.pendingCost.costScope,
-          input.finalPrintingCost,
-          input.finalShippingCost,
+          nextPrintingCost,
+          nextShippingCost,
         );
         setTransactions((previous) => [...nextTransactions, ...previous]);
         setPendingOrderCosts((previous) =>
           replacePendingCost(previous, {
             ...input.pendingCost,
-            finalPrintingCost: input.finalPrintingCost ?? null,
-            finalShippingCost: input.finalShippingCost ?? null,
+            finalPrintingCost: nextPrintingCost,
+            finalShippingCost: nextShippingCost,
             currency: input.currency,
             exchangeRateToUsd: input.exchangeRateToUsd,
             status,

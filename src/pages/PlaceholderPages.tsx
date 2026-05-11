@@ -345,6 +345,7 @@ function PendingOrderCostsPanel({
   const activeRows = pendingOrderCosts.filter((cost) =>
     ['pending', 'partially_resolved'].includes(cost.status),
   );
+  const activeCountLabel = `${activeRows.length} pending order cost${activeRows.length === 1 ? '' : 's'}`;
   const rows = pendingOrderCosts.filter((cost) => {
     if (filter === 'all') return true;
     if (filter === 'active') return ['pending', 'partially_resolved'].includes(cost.status);
@@ -453,17 +454,29 @@ function PendingOrderCostsPanel({
     const finalShippingCost = parseOptionalNonNegativeNumber(resolveForm.finalShippingCost);
     const exchangeRateToUsd = getExchangeRateForSave(resolveForm.currency, resolveForm.exchangeRateToUsd);
     const targetStatement = statements.find((statement) => statement.id === resolveForm.statementId);
+    const existingPrintingResolved = (resolving.finalPrintingCost ?? 0) > 0;
+    const existingShippingResolved = (resolving.finalShippingCost ?? 0) > 0;
+    const newPrintingCost = !existingPrintingResolved ? finalPrintingCost ?? 0 : 0;
+    const newShippingCost = !existingShippingResolved ? finalShippingCost ?? 0 : 0;
 
     if (!targetStatement) {
-      setError('Target statement is required.');
+      setError('No statement exists for this period. Create a statement before resolving this cost.');
       return;
     }
     if (finalPrintingCost === undefined || finalShippingCost === undefined) {
       setError('Final costs must be zero or greater.');
       return;
     }
-    if ((finalPrintingCost ?? 0) <= 0 && (finalShippingCost ?? 0) <= 0) {
-      setError('Enter at least one non-zero final cost to resolve.');
+    if (resolving.costScope === 'printing' && (finalPrintingCost ?? 0) <= 0) {
+      setError('Final printing cost is required for a printing pending cost.');
+      return;
+    }
+    if (resolving.costScope === 'shipping' && (finalShippingCost ?? 0) <= 0) {
+      setError('Final shipping cost is required for a shipping pending cost.');
+      return;
+    }
+    if ((newPrintingCost <= 0 && newShippingCost <= 0)) {
+      setError('Enter at least one finalized cost before resolving.');
       return;
     }
     if (!exchangeRateToUsd) {
@@ -491,6 +504,7 @@ function PendingOrderCostsPanel({
   return (
     <>
       <SectionCard
+        className={activeRows.length > 0 ? 'border-amber-200 bg-amber-50/30 shadow-amber-50' : ''}
         title="Pending Order Costs"
         subtitle="Track orders whose printing or shipping costs are not finalized yet."
         action={
@@ -501,9 +515,20 @@ function PendingOrderCostsPanel({
           ) : undefined
         }
       >
+        {activeRows.length > 0 && (
+          <div className="border-b border-amber-200 bg-amber-50 px-5 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-amber-900">This dealer has unresolved order costs.</p>
+                <p className="mt-1 text-sm text-amber-800">{activeCountLabel} need review before the related printing or shipping costs are forgotten.</p>
+              </div>
+              <Button onClick={() => setFilter('active')}>Review Pending Costs</Button>
+            </div>
+          </div>
+        )}
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
           <p className="text-sm text-slate-600">
-            {activeRows.length} active unresolved item{activeRows.length === 1 ? '' : 's'} for this dealer.
+            {activeCountLabel} for this dealer.
           </p>
           <select
             className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm shadow-sm"
@@ -874,6 +899,9 @@ export function DealerProfilePage({
     statements.filter((statement) => statement.dealerId === dealer.id),
   );
   const dealerPendingOrderCosts = pendingOrderCosts.filter((cost) => cost.dealerId === dealer.id);
+  const currentMonthStatement = dealerStatements.find(
+    (statement) => statement.month === new Date().toISOString().slice(0, 7),
+  );
   const openStatements = getOpenStatementsForDealer(dealer.id, statements, transactions, dealers, allocations);
   const ledger = getDealerLedgerRows(dealer.id, statements, transactions, dealers, payments, allocations);
   const openBalance = getDealerOpenBalance(dealer.id, statements, transactions, dealers, allocations);
@@ -1300,6 +1328,7 @@ export function DealerProfilePage({
         statements={dealerStatements}
         pendingOrderCosts={dealerPendingOrderCosts}
         canCreate={canAddDealerTransaction}
+        defaultStatement={currentMonthStatement}
         setFlash={setFlash}
         onCreate={onCreatePendingOrderCost}
         onUpdate={onUpdatePendingOrderCost}

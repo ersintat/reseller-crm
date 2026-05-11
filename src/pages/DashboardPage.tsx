@@ -367,7 +367,19 @@ export function DashboardPage({
         </SectionCard>
       </div>
 
-      <SectionCard title="Pending Order Costs" subtitle="Unresolved printing and shipping costs that do not affect totals yet.">
+      <SectionCard
+        className="border-amber-200 bg-amber-50/30 shadow-amber-50"
+        title="Pending Order Costs"
+        subtitle="Unresolved printing and shipping costs that do not affect totals yet."
+      >
+        {pendingCostRows.length > 0 && (
+          <div className="border-b border-amber-200 bg-amber-50 px-5 py-4">
+            <p className="text-sm font-semibold text-amber-900">Action Required: unresolved order costs</p>
+            <p className="mt-1 text-sm text-amber-800">
+              Review these before production or shipping costs are missed.
+            </p>
+          </div>
+        )}
         {pendingCostRows.length === 0 ? (
           <EmptyState title="No unresolved order costs." />
         ) : (
@@ -391,7 +403,7 @@ export function DashboardPage({
                   <td className="px-4 py-3 text-slate-600">{row.oldest?.createdAt.slice(0, 10) || '-'}</td>
                   <td className="px-4 py-3 text-right">
                     <Link className="rounded-lg px-2.5 py-1.5 text-indigoBrand font-medium hover:bg-indigo-50" to={`/dealers/${row.dealer.id}`}>
-                      View dealer
+                      Review Pending Costs
                     </Link>
                   </td>
                 </tr>
