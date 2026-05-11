@@ -176,8 +176,8 @@ export function App() {
   const [dealerPaymentLoading, setDealerPaymentLoading] = useState(false);
   const [dealerPaymentError, setDealerPaymentError] = useState('');
   const [employeeSettlementLoading, setEmployeeSettlementLoading] = useState(false);
-  const [employeeSettlementError, setEmployeeSettlementError] = useState('');
-  const lastCommissionSyncErrorRef = useRef('');
+  const commissionSyncTriggeredByUserRef = useRef(false);
+  const [commissionSyncStatus, setCommissionSyncStatus] = useState<'not_run' | 'ok' | 'failed'>('not_run');
 
   useEffect(() => {
     if (!auth.authEnabled || !auth.user) {
@@ -238,10 +238,10 @@ export function App() {
       setSupabaseEmployeePaymentAllocations(null);
       setActivityError('');
       setDealerPaymentError('');
-      setEmployeeSettlementError('');
       setActivityLoading(false);
       setDealerPaymentLoading(false);
       setEmployeeSettlementLoading(false);
+      setCommissionSyncStatus('not_run');
       return;
     }
 
@@ -331,14 +331,13 @@ export function App() {
       setSupabaseEmployeeCommissions(null);
       setSupabaseEmployeePayments(null);
       setSupabaseEmployeePaymentAllocations(null);
-      setEmployeeSettlementError('');
       setEmployeeSettlementLoading(false);
+      setCommissionSyncStatus('not_run');
       return;
     }
 
     let active = true;
     setEmployeeSettlementLoading(true);
-    setEmployeeSettlementError('');
 
     const loadEmployeeSettlements = async () => {
       const nextCommissions = await fetchEmployeeCommissions({
@@ -359,6 +358,7 @@ export function App() {
         setSupabaseEmployeeCommissions(nextCommissions);
         setSupabaseEmployeePayments(nextPayments);
         setSupabaseEmployeePaymentAllocations(nextAllocations);
+        setCommissionSyncStatus('ok');
       })
       .catch((error) => {
         if (!active) return;
@@ -366,7 +366,7 @@ export function App() {
         setSupabaseEmployeeCommissions([]);
         setSupabaseEmployeePayments([]);
         setSupabaseEmployeePaymentAllocations([]);
-        setEmployeeSettlementError('Supabase employee commissions and payments could not be loaded.');
+        setCommissionSyncStatus('failed');
       })
       .finally(() => {
         if (active) setEmployeeSettlementLoading(false);
@@ -481,9 +481,16 @@ export function App() {
         prepareCommissionForSync(existingByKey.get(commissionKey(commission)), commission),
       );
 
-    if (commissionsToSync.length === 0) return;
+    if (commissionsToSync.length === 0) {
+      if (commissionSyncTriggeredByUserRef.current) {
+        commissionSyncTriggeredByUserRef.current = false;
+        setCommissionSyncStatus('ok');
+      }
+      return;
+    }
 
     let active = true;
+    const userTriggeredSync = commissionSyncTriggeredByUserRef.current;
     createOrUpdateEmployeeCommissions({
       commissions: commissionsToSync,
       employees: employeesWithAssignments,
@@ -493,16 +500,18 @@ export function App() {
       .then((synced) => {
         if (!active) return;
         setSupabaseEmployeeCommissions((previous) => mergeEmployeeCommissions(previous ?? [], synced));
-        lastCommissionSyncErrorRef.current = '';
-        setEmployeeSettlementError('');
+        setCommissionSyncStatus('ok');
+        if (userTriggeredSync) {
+          commissionSyncTriggeredByUserRef.current = false;
+        }
       })
       .catch((error) => {
         if (!active) return;
         console.warn('Failed to sync Supabase employee commissions.', error);
-        const friendlyMessage = 'Commission sync could not be completed. Please refresh or try again.';
-        if (lastCommissionSyncErrorRef.current !== friendlyMessage) {
-          lastCommissionSyncErrorRef.current = friendlyMessage;
-          setEmployeeSettlementError(friendlyMessage);
+        setCommissionSyncStatus('failed');
+        if (userTriggeredSync) {
+          commissionSyncTriggeredByUserRef.current = false;
+          setFlash('Statement updated, but commission sync could not be completed. Please refresh or try again.');
         }
       });
 
@@ -567,6 +576,7 @@ export function App() {
 
     try {
       await updateStatementStatus(statement.supabaseId ?? statement.id, status);
+      commissionSyncTriggeredByUserRef.current = true;
       setSupabaseStatements((previous) =>
         (previous ?? []).map((row) => (row.id === statement.id ? { ...row, status } : row)),
       );
@@ -933,7 +943,7 @@ export function App() {
     : auth.authEnabled
       ? 'Mock reference data · Local settlement activity'
       : 'Demo mode · Local settlement activity';
-  const dataSourceError = [referenceError, activityError, dealerPaymentError, employeeSettlementError]
+  const dataSourceError = [referenceError, activityError, dealerPaymentError]
     .filter(Boolean)
     .join(' ');
   const referenceStatusLabel = referenceLoading
@@ -985,7 +995,7 @@ export function App() {
         <Route path="employees" element={role === 'admin' ? <EmployeesPage employees={employeesWithAssignments} dealers={activeDealers} commissions={activeEmployeeCommissions} allocations={activeEmployeePaymentAllocations} /> : <Navigate to="/" replace />} />
         <Route path="employees/:employeeId" element={<EmployeeProfilePage role={role} employees={employeesWithAssignments} dealers={activeDealers} commissions={activeEmployeeCommissions} payments={activeEmployeePayments} allocations={activeEmployeePaymentAllocations} setPayments={setEmployeePayments} setAllocations={setEmployeePaymentAllocations} setCommissions={setEmployeeCommissions} setFlash={setFlash} onRecordEmployeePayment={usingSupabaseEmployeeSettlementData ? handleRecordEmployeePayment : undefined} />} />
         <Route path="assignments" element={role === 'admin' ? <AssignmentsPage employees={employeesWithAssignments} dealers={activeDealers} onUpdateAssignment={updateAssignment} onCreateAssignment={createAssignment} /> : <Navigate to="/" replace />} />
-        <Route path="settings" element={role === 'admin' ? <SettingsPage onResetDemoData={resetDemoData} dataModeLabel={referenceStatusLabel} /> : <Navigate to="/" replace />} />
+        <Route path="settings" element={role === 'admin' ? <SettingsPage onResetDemoData={resetDemoData} dataModeLabel={referenceStatusLabel} commissionSyncStatus={commissionSyncStatus} /> : <Navigate to="/" replace />} />
         <Route path="my-commissions" element={<MyCommissionsPage role={role} employee={employee} dealers={activeDealers} commissions={role === 'employee' ? employeeVisibleCommissions : activeEmployeeCommissions} payments={activeEmployeePayments} allocations={activeEmployeePaymentAllocations} />} />
       </Route>
     </Routes>

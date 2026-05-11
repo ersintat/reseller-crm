@@ -2551,14 +2551,40 @@ export function AssignmentsPage({
   );
 }
 
-export function SettingsPage({ onResetDemoData, dataModeLabel }: { onResetDemoData: () => void; dataModeLabel: string }) {
+export function SettingsPage({
+  onResetDemoData,
+  dataModeLabel,
+  commissionSyncStatus = 'not_run',
+}: {
+  onResetDemoData: () => void;
+  dataModeLabel: string;
+  commissionSyncStatus?: 'not_run' | 'ok' | 'failed';
+}) {
+  const commissionSyncLabel =
+    commissionSyncStatus === 'failed'
+      ? 'Last commission sync: failed'
+      : commissionSyncStatus === 'ok'
+        ? 'Last commission sync: completed'
+        : 'Last commission sync: not run';
+
   return (
     <PageShell title="Settings" subtitle="Demo environment controls">
       <div className="grid gap-5 xl:grid-cols-2">
         <SectionCard title="System Status" subtitle="Current data source and runtime mode.">
-          <div className="space-y-2 p-5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Data source</p>
-            <p className="text-sm font-medium text-slate-900">{dataModeLabel}</p>
+          <div className="space-y-5 p-5">
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Data source</p>
+              <p className="text-sm font-medium text-slate-900">{dataModeLabel}</p>
+            </div>
+            <div className="space-y-2 border-t border-slate-200 pt-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Commission sync</p>
+              <p className={commissionSyncStatus === 'failed' ? 'text-sm font-medium text-amber-700' : 'text-sm font-medium text-slate-900'}>
+                {commissionSyncLabel}
+              </p>
+              {commissionSyncStatus === 'failed' && (
+                <p className="text-xs text-slate-500">View the browser console for technical details.</p>
+              )}
+            </div>
           </div>
         </SectionCard>
         <SectionCard title="Demo Data" subtitle="Local browser persistence controls.">
