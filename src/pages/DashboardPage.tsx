@@ -103,7 +103,7 @@ export function DashboardPage({
             <KpiCard
               label="My Current Month Commission"
               value={formatUsd(getCurrentMonthEmployeeCommission(employee.id, employeeCommissions))}
-              helper="Current mock period: April 2026."
+              helper="Current period: April 2026."
             />
             <KpiCard
               label="Assigned Stores"
@@ -280,7 +280,7 @@ export function DashboardPage({
         <KpiCard
           label="Current Month Dealer Receivables"
           value={formatUsd(totals.currentMonthReceivable)}
-          helper="Confirmed transaction totals for the active mock period."
+          helper="Confirmed transaction totals for the active period."
           context={currentMonth}
           tone="slate"
         />
@@ -323,7 +323,7 @@ export function DashboardPage({
         <SectionCard
           className="xl:col-span-2"
           title="Settlement Overview"
-          subtitle="Dealer-level receivables and payment context from mock statement ledgers."
+          subtitle="Dealer-level receivables and payment context from statement ledgers."
         >
           <DataTable>
               <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">

@@ -50,6 +50,7 @@ import type {
   RecordDealerPaymentInput,
   RecordEmployeePaymentInput,
   ResolvePendingOrderCostInput,
+  UpdateTransactionInput,
 } from '../lib/settlementActivityService';
 import {
   currencyOptions,
@@ -247,15 +248,91 @@ function ExchangeRateLookupStatus({ lookup }: { lookup: ExchangeRateLookupState 
 
   return null;
 }
-function SummaryCard({ label, value, helper }: { label: string; value: string; helper?: string }) {
+function SummaryCard({ label, value, helper, secondary }: { label: string; value: string; helper?: string; secondary?: string }) {
   return (
     <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-indigoBrand to-indigo-400" />
       <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</p>
       <p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{value}</p>
+      {secondary && <p className="mt-1 text-xs font-medium text-slate-500">{secondary}</p>}
       {helper && <p className="mt-2 text-xs leading-5 text-slate-500">{helper}</p>}
     </div>
   );
+}
+
+function getDealerSecondaryCurrency(dealer: Dealer): SupportedCurrency | null {
+  const currency = dealer.currency as SupportedCurrency | undefined;
+  if (!currency || currency === 'USD' || !currencyOptions.includes(currency)) return null;
+  return currency;
+}
+
+function getOriginalCurrency(row: { originalCurrency?: string }) {
+  return row.originalCurrency || 'USD';
+}
+
+function formatSecondaryCurrencyAmount(amount: number, currency: SupportedCurrency) {
+  return `≈ ${formatCurrencyAmount(amount, currency)} ${currency}`;
+}
+
+function secondaryText(value: { amount: number; mixed: boolean } | null, currency: SupportedCurrency) {
+  if (!value) return undefined;
+  if (value.mixed) return 'Mixed currencies';
+  return formatSecondaryCurrencyAmount(value.amount, currency);
+}
+
+function calculateOriginalStatementTotals(
+  statement: Statement,
+  dealer: Dealer,
+  transactions: SettlementTransaction[],
+  currency: SupportedCurrency,
+) {
+  const scoped = transactions.filter(
+    (transaction) => transaction.statementId === statement.id && transaction.status === 'confirmed',
+  );
+  if (scoped.length === 0) return null;
+  if (scoped.some((transaction) => getOriginalCurrency(transaction) !== currency)) {
+    return { mixed: true, totalBankPayouts: 0, companyShare: 0, dealerReceivable: 0 };
+  }
+
+  const amountFor = (transaction: SettlementTransaction) => transaction.originalAmount ?? transaction.amount;
+  const sumType = (type: TransactionType) =>
+    scoped
+      .filter((transaction) => transaction.type === type)
+      .reduce((total, transaction) => total + amountFor(transaction), 0);
+  const signedAdjustment = (scope: ManualAdjustmentScope) =>
+    scoped
+      .filter((transaction) => transaction.type === 'manual_adjustment' && transaction.adjustmentScope === scope)
+      .reduce(
+        (total, transaction) =>
+          total + (transaction.adjustmentDirection === 'decrease' ? -amountFor(transaction) : amountFor(transaction)),
+        0,
+      );
+
+  const totalBankPayouts = sumType('bank_payout');
+  const totalStoreExpenses = sumType('store_expense');
+  const totalPrintingCosts = sumType('printing_cost');
+  const totalShippingCosts = sumType('shipping_cost');
+  const shareableNet = totalBankPayouts - totalStoreExpenses + signedAdjustment('shareable_net');
+  const companyShare = shareableNet * dealer.companySharePercentage;
+  const dealerReceivable =
+    companyShare + totalPrintingCosts + totalShippingCosts + signedAdjustment('dealer_receivable_only');
+
+  return { mixed: false, totalBankPayouts, companyShare, dealerReceivable };
+}
+
+function getDealerPaymentSecondary(payments: DealerPayment[], currency: SupportedCurrency) {
+  if (payments.length === 0) return null;
+  if (payments.some((payment) => getOriginalCurrency(payment) !== currency)) return { amount: 0, mixed: true };
+  return {
+    amount: payments.reduce((total, payment) => total + (payment.originalAmount ?? payment.amount), 0),
+    mixed: false,
+  };
+}
+
+function getPaymentSecondary(payment: DealerPayment | undefined, currency: SupportedCurrency) {
+  if (!payment) return null;
+  if (getOriginalCurrency(payment) !== currency) return { amount: 0, mixed: true };
+  return { amount: payment.originalAmount ?? payment.amount, mixed: false };
 }
 
 function InfoCallout({ children }: { children: React.ReactNode }) {
@@ -727,13 +804,17 @@ function StatementBreakdown({ statement, dealer, transactions, allocations }: {
 }) {
   const paid = getEffectiveStatementPaidAmount(statement, allocations);
   const totals = calculateStatementTotals(statement, transactions, dealer, paid);
+  const dealerSecondaryCurrency = getDealerSecondaryCurrency(dealer);
+  const secondaryTotals = dealerSecondaryCurrency
+    ? calculateOriginalStatementTotals(statement, dealer, transactions, dealerSecondaryCurrency)
+    : null;
   const rows = [
-    ['Platform payout', totals.total_bank_payouts],
+    ['Platform payout', totals.total_bank_payouts, secondaryTotals?.totalBankPayouts],
     [`Dealer share (${formatPercent(dealer.dealerSharePercentage)})`, totals.dealer_share_amount],
-    [`Company share (${formatPercent(dealer.companySharePercentage)})`, totals.company_share_amount],
+    [`Company share (${formatPercent(dealer.companySharePercentage)})`, totals.company_share_amount, secondaryTotals?.companyShare],
     ['Printing cost', totals.total_printing_costs],
     ['Shipping cost', totals.total_shipping_costs],
-    ['Dealer receivable', totals.dealer_receivable_amount],
+    ['Dealer receivable', totals.dealer_receivable_amount, secondaryTotals?.dealerReceivable],
     ['Paid', totals.paid_amount],
     ['Remaining', totals.remaining_amount],
   ];
@@ -747,10 +828,15 @@ function StatementBreakdown({ statement, dealer, transactions, allocations }: {
       <div className="space-y-4 p-5">
         <InfoCallout>{platformPayoutHelper}</InfoCallout>
         <div className="grid gap-3 md:grid-cols-4">
-        {rows.map(([label, value]) => (
+        {rows.map(([label, value, secondary]) => (
           <div key={String(label)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</p>
             <p className="mt-1 text-base font-semibold text-slate-950">{formatUsd(Number(value))}</p>
+            {dealerSecondaryCurrency && secondary !== undefined && secondaryTotals && (
+              <p className="mt-0.5 text-xs font-medium text-slate-500">
+                {secondaryTotals.mixed ? 'Mixed currencies' : formatSecondaryCurrencyAmount(Number(secondary), dealerSecondaryCurrency)}
+              </p>
+            )}
           </div>
         ))}
         </div>
@@ -916,9 +1002,38 @@ export function DealerProfilePage({
     (total, statement) => total + getEffectiveStatementPaidAmount(statement, allocations),
     0,
   );
+  const dealerPayments = payments.filter((payment) => payment.dealerId === dealer.id);
   const lastPayment = payments
     .filter((payment) => payment.dealerId === dealer.id)
     .sort((a, b) => b.paymentDate.localeCompare(a.paymentDate))[0];
+  const dealerSecondaryCurrency = getDealerSecondaryCurrency(dealer);
+  const secondaryStatementTotals = dealerSecondaryCurrency
+    ? dealerStatements.map((statement) =>
+        calculateOriginalStatementTotals(statement, dealer, transactions, dealerSecondaryCurrency),
+      )
+    : [];
+  const secondaryReceivableTotal = dealerSecondaryCurrency && secondaryStatementTotals.length > 0
+    ? secondaryStatementTotals.some((row) => !row || row.mixed)
+      ? { amount: 0, mixed: true }
+      : {
+          amount: secondaryStatementTotals.reduce((total, row) => total + (row?.dealerReceivable ?? 0), 0),
+          mixed: false,
+        }
+    : null;
+  const secondaryCurrentReceivable = dealerSecondaryCurrency && currentMonthStatement
+    ? (() => {
+        const current = calculateOriginalStatementTotals(currentMonthStatement, dealer, transactions, dealerSecondaryCurrency);
+        if (!current) return null;
+        return current.mixed ? { amount: 0, mixed: true } : { amount: current.dealerReceivable, mixed: false };
+      })()
+    : null;
+  const secondaryPaid = dealerSecondaryCurrency ? getDealerPaymentSecondary(dealerPayments, dealerSecondaryCurrency) : null;
+  const secondaryOpenBalance = dealerSecondaryCurrency && secondaryReceivableTotal && secondaryPaid && !secondaryReceivableTotal.mixed && !secondaryPaid.mixed
+    ? { amount: secondaryReceivableTotal.amount - secondaryPaid.amount, mixed: false }
+    : secondaryReceivableTotal?.mixed || secondaryPaid?.mixed
+      ? { amount: 0, mixed: true }
+      : secondaryReceivableTotal;
+  const secondaryLastPayment = dealerSecondaryCurrency ? getPaymentSecondary(lastPayment, dealerSecondaryCurrency) : null;
   const paymentUsdPreview = calculateUsdPreview(payForm.amount, payForm.currency, payForm.exchangeRateToUsd);
   let running = 0;
 
@@ -1118,16 +1233,28 @@ export function DealerProfilePage({
   return (
     <PageShell title="Dealer Profile" subtitle={`${dealer.name} account overview and settlement ledger`}>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard label="Open Balance" value={formatUsd(openBalance)} helper="Sum of statement remaining amounts." />
+        <SummaryCard
+          label="Open Balance"
+          value={formatUsd(openBalance)}
+          secondary={dealerSecondaryCurrency ? secondaryText(secondaryOpenBalance, dealerSecondaryCurrency) : undefined}
+          helper="Sum of statement remaining amounts."
+        />
         <SummaryCard
           label="Current Month Receivable"
           value={formatUsd(currentMonthReceivable)}
-          helper="Current mock period: April 2026."
+          secondary={dealerSecondaryCurrency ? secondaryText(secondaryCurrentReceivable, dealerSecondaryCurrency) : undefined}
+          helper="Current period: April 2026."
         />
-        <SummaryCard label="Total Paid" value={formatUsd(totalPaid)} helper="Seed paid amount plus allocated payments." />
+        <SummaryCard
+          label="Total Paid"
+          value={formatUsd(totalPaid)}
+          secondary={dealerSecondaryCurrency ? secondaryText(secondaryPaid, dealerSecondaryCurrency) : undefined}
+          helper="Seed paid amount plus allocated payments."
+        />
         <SummaryCard
           label="Last Payment"
           value={lastPayment ? formatUsd(lastPayment.amount) : formatUsd(0)}
+          secondary={dealerSecondaryCurrency ? secondaryText(secondaryLastPayment, dealerSecondaryCurrency) : undefined}
           helper={lastPayment ? lastPayment.paymentDate : 'No recorded dealer payment.'}
         />
       </div>
@@ -1404,15 +1531,35 @@ export function DealerProfilePage({
                 dealer,
                 getEffectiveStatementPaidAmount(statement, allocations),
               );
+              const secondaryTotals = dealerSecondaryCurrency
+                ? calculateOriginalStatementTotals(statement, dealer, transactions, dealerSecondaryCurrency)
+                : null;
+              const renderSecondary = (amount?: number) => {
+                if (!dealerSecondaryCurrency || !secondaryTotals) return null;
+                return (
+                  <p className="mt-0.5 text-xs font-medium text-slate-500">
+                    {secondaryTotals.mixed ? 'Mixed currencies' : formatSecondaryCurrencyAmount(amount ?? 0, dealerSecondaryCurrency)}
+                  </p>
+                );
+              };
               return (
                 <tr key={statement.id} className="border-t border-slate-100 transition hover:bg-slate-50">
                   <td className="px-4 py-3 font-medium text-slate-950">{statement.month}</td>
                   <td className="px-4 py-3">
                     <StatusBadge status={statement.status} />
                   </td>
-                  <td className="px-4 py-3 text-right">{formatUsd(totals.total_bank_payouts)}</td>
-                  <td className="px-4 py-3 text-right">{formatUsd(totals.company_share_amount)}</td>
-                  <td className="px-4 py-3 text-right font-semibold text-slate-950">{formatUsd(totals.dealer_receivable_amount)}</td>
+                  <td className="px-4 py-3 text-right">
+                    {formatUsd(totals.total_bank_payouts)}
+                    {renderSecondary(secondaryTotals?.totalBankPayouts)}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {formatUsd(totals.company_share_amount)}
+                    {renderSecondary(secondaryTotals?.companyShare)}
+                  </td>
+                  <td className="px-4 py-3 text-right font-semibold text-slate-950">
+                    {formatUsd(totals.dealer_receivable_amount)}
+                    {renderSecondary(secondaryTotals?.dealerReceivable)}
+                  </td>
                   <td className="px-4 py-3 text-right text-emerald-700">{formatUsd(totals.paid_amount)}</td>
                   <td className="px-4 py-3 text-right font-semibold text-slate-950">{formatUsd(totals.remaining_amount)}</td>
                   <td className="px-4 py-3 text-right">
@@ -1592,6 +1739,10 @@ interface StatementDetailPageProps {
   role: Role;
   assignedStoreIds: string[];
   addTransactionStoreIds: string[];
+  confirmedTransactionStoreIds: string[];
+  editTransactionStoreIds: string[];
+  deleteTransactionStoreIds: string[];
+  currentUserId?: string;
   dealers: Dealer[];
   statements: Statement[];
   transactions: SettlementTransaction[];
@@ -1617,6 +1768,10 @@ interface StatementDetailPageProps {
       adjustmentDirection?: ManualAdjustmentDirection;
     },
   ) => Promise<void> | void;
+  onUpdateTransaction?: (
+    transaction: SettlementTransaction,
+    patch: UpdateTransactionInput,
+  ) => Promise<boolean> | boolean;
   onDeleteStatement?: (statement: Statement) => Promise<boolean> | boolean;
   onDeleteTransaction?: (transaction: SettlementTransaction) => Promise<boolean> | boolean;
   onCreatePendingOrderCost?: (input: PendingOrderCostInput) => Promise<void> | void;
@@ -1629,6 +1784,10 @@ export function StatementDetailPage({
   role,
   assignedStoreIds,
   addTransactionStoreIds,
+  confirmedTransactionStoreIds,
+  editTransactionStoreIds,
+  deleteTransactionStoreIds,
+  currentUserId,
   dealers,
   statements,
   transactions,
@@ -1638,6 +1797,7 @@ export function StatementDetailPage({
   employees,
   pendingOrderCosts,
   onCreateTransaction,
+  onUpdateTransaction,
   onDeleteStatement,
   onDeleteTransaction,
   onCreatePendingOrderCost,
@@ -1659,6 +1819,18 @@ export function StatementDetailPage({
     adjustmentScope: 'shareable_net' as ManualAdjustmentScope,
     adjustmentDirection: 'increase' as ManualAdjustmentDirection,
   });
+  const [editingTransaction, setEditingTransaction] = useState<SettlementTransaction | null>(null);
+  const [editForm, setEditForm] = useState({
+    date: '',
+    type: 'bank_payout' as TransactionType,
+    amount: '',
+    currency: 'USD' as SupportedCurrency,
+    exchangeRateToUsd: '1',
+    description: '',
+    orderCode: '',
+    adjustmentScope: 'shareable_net' as ManualAdjustmentScope,
+    adjustmentDirection: 'increase' as ManualAdjustmentDirection,
+  });
   const transactionRate = useExchangeRateAutofill({
     currency: form.currency,
     date: form.date,
@@ -1670,6 +1842,16 @@ export function StatementDetailPage({
   if (!dealer) return <PageShell title="Statement Detail" subtitle="Dealer not found" />;
   if (role === 'employee' && !assignedStoreIds.includes(dealer.storeId)) return <Navigate to="/dealers" replace />;
   const canAddTransaction = role === 'admin' || addTransactionStoreIds.includes(dealer.storeId);
+  const employeeCreatesConfirmed =
+    role === 'employee' && confirmedTransactionStoreIds.includes(dealer.storeId);
+  const canEditTransaction = (transaction: SettlementTransaction) =>
+    role === 'admin' ||
+    (editTransactionStoreIds.includes(dealer.storeId) &&
+      (currentUserId ? transaction.createdBy === currentUserId : transaction.createdByRole === 'employee'));
+  const canDeleteTransaction = (transaction: SettlementTransaction) =>
+    role === 'admin' ||
+    (deleteTransactionStoreIds.includes(dealer.storeId) &&
+      (currentUserId ? transaction.createdBy === currentUserId : transaction.createdByRole === 'employee'));
 
   const txns = transactions.filter((transaction) => transaction.statementId === statement.id);
   const paid = getEffectiveStatementPaidAmount(statement, allocations);
@@ -1712,7 +1894,7 @@ export function StatementDetailPage({
       return;
     }
 
-    const status: TransactionStatus = role === 'admin' ? 'confirmed' : 'pending_review';
+    const status: TransactionStatus = role === 'admin' || employeeCreatesConfirmed ? 'confirmed' : 'pending_review';
     setTransactions((previous) => [
       ...previous,
       {
@@ -1734,8 +1916,71 @@ export function StatementDetailPage({
         createdByRole: role,
       },
     ]);
-    setFlash(role === 'admin' ? 'Transaction added and confirmed.' : 'Transaction submitted for admin review.');
+    setFlash(status === 'confirmed' ? 'Transaction added and confirmed.' : 'Transaction submitted for admin review.');
     setForm((previous) => ({ ...previous, amount: '', description: '', orderCode: '' }));
+  };
+
+  const openTransactionEditor = (transaction: SettlementTransaction) => {
+    setEditingTransaction(transaction);
+    setEditForm({
+      date: transaction.date,
+      type: transaction.type,
+      amount: String(transaction.originalAmount ?? transaction.amount),
+      currency: (transaction.originalCurrency as SupportedCurrency) || 'USD',
+      exchangeRateToUsd: formatRateForInput(transaction.exchangeRateToUsd ?? 1),
+      description: transaction.description || '',
+      orderCode: transaction.orderCode || '',
+      adjustmentScope: transaction.adjustmentScope || 'shareable_net',
+      adjustmentDirection: transaction.adjustmentDirection || 'increase',
+    });
+  };
+
+  const saveEditedTransaction = async () => {
+    if (!editingTransaction) return;
+    const originalAmount = parsePositiveNumber(editForm.amount);
+    const exchangeRateToUsd = getExchangeRateForSave(editForm.currency, editForm.exchangeRateToUsd);
+    if (!editForm.date || !editForm.type || !originalAmount) {
+      setFlash('Error: required fields and positive original amount are required.');
+      return;
+    }
+    if (!exchangeRateToUsd) {
+      setFlash('Exchange rate to USD must be greater than zero.');
+      return;
+    }
+    if (
+      editingTransaction.status === 'confirmed' &&
+      !window.confirm('Editing a confirmed transaction will update statement totals.')
+    ) {
+      return;
+    }
+
+    const usdAmount = roundUsdAmount(originalAmount * exchangeRateToUsd);
+    const patch: UpdateTransactionInput = {
+      date: editForm.date,
+      type: editForm.type,
+      amount: usdAmount,
+      originalAmount,
+      originalCurrency: editForm.currency,
+      exchangeRateToUsd,
+      usdAmount,
+      description: editForm.description,
+      orderCode: editForm.orderCode || undefined,
+      adjustmentScope: editForm.type === 'manual_adjustment' ? editForm.adjustmentScope : undefined,
+      adjustmentDirection: editForm.type === 'manual_adjustment' ? editForm.adjustmentDirection : undefined,
+    };
+
+    const saved = onUpdateTransaction
+      ? await onUpdateTransaction(editingTransaction, patch)
+      : (() => {
+          setTransactions((previous) =>
+            previous.map((transaction) =>
+              transaction.id === editingTransaction.id ? { ...transaction, ...patch } : transaction,
+            ),
+          );
+          setFlash('Transaction updated.');
+          return true;
+        })();
+    if (saved) setEditingTransaction(null);
   };
 
   const deleteTransaction = (transaction: SettlementTransaction) => {
@@ -1798,10 +2043,18 @@ export function StatementDetailPage({
       {canAddTransaction ? (
         <SectionCard
           title="Add Transaction"
-          subtitle={role === 'employee' ? 'Employee submissions enter the review queue.' : 'Admin-created transactions are confirmed immediately.'}
+          subtitle={
+            role === 'employee'
+              ? employeeCreatesConfirmed
+                ? 'This assignment allows confirmed employee transaction entry.'
+                : 'Employee submissions enter the review queue.'
+              : 'Admin-created transactions are confirmed immediately.'
+          }
         >
           <div id="add-transaction" className="space-y-4 p-5">
-            {role === 'employee' ? (
+            {role === 'employee' && employeeCreatesConfirmed ? (
+              <InfoCallout>Your transaction will be added as confirmed and will affect statement totals immediately.</InfoCallout>
+            ) : role === 'employee' ? (
               <InfoCallout>Your transaction will be submitted for admin review and will not affect totals until approved.</InfoCallout>
             ) : (
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
@@ -1950,7 +2203,9 @@ export function StatementDetailPage({
               <th className="px-4 py-3 text-right">USD Amount</th>
               <th className="px-4 py-3">Order</th>
               <th className="px-4 py-3">Description</th>
-              {role === 'admin' && <th className="px-4 py-3 text-right">Actions</th>}
+              {(role === 'admin' || editTransactionStoreIds.includes(dealer.storeId) || deleteTransactionStoreIds.includes(dealer.storeId)) && (
+                <th className="px-4 py-3 text-right">Actions</th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -1975,11 +2230,20 @@ export function StatementDetailPage({
                 <td className="px-4 py-3 text-right font-semibold">{formatUsd(transaction.usdAmount ?? transaction.amount)}</td>
                 <td className="px-4 py-3">{transaction.orderCode || '-'}</td>
                 <td className="px-4 py-3">{transaction.description || '-'}</td>
-                {role === 'admin' && (
+                {(role === 'admin' || canEditTransaction(transaction) || canDeleteTransaction(transaction)) && (
                   <td className="px-4 py-3 text-right">
-                    <Button variant="danger" onClick={() => deleteTransaction(transaction)}>
-                      Delete
-                    </Button>
+                    <div className="flex justify-end gap-2">
+                      {canEditTransaction(transaction) && (
+                        <Button onClick={() => openTransactionEditor(transaction)}>
+                          Edit
+                        </Button>
+                      )}
+                      {canDeleteTransaction(transaction) && (
+                        <Button variant="danger" onClick={() => deleteTransaction(transaction)}>
+                          Delete
+                        </Button>
+                      )}
+                    </div>
                   </td>
                 )}
               </tr>
@@ -2045,6 +2309,130 @@ export function StatementDetailPage({
           </SectionCard>
         )}
       </div>
+
+      {editingTransaction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
+          <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-xl">
+            <div className="border-b border-slate-200 px-5 py-4">
+              <h3 className="text-base font-semibold text-slate-950">Edit Transaction</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Confirmed transaction edits update statement totals.
+              </p>
+            </div>
+            <div className="grid gap-3 p-5 md:grid-cols-3">
+              <FormLabel label="Date">
+                <input
+                  type="date"
+                  className="h-10 w-full px-3"
+                  value={editForm.date}
+                  onChange={(event) => setEditForm({ ...editForm, date: event.target.value })}
+                />
+              </FormLabel>
+              <FormLabel label="Type">
+                <select
+                  className="h-10 w-full px-3"
+                  value={editForm.type}
+                  onChange={(event) => setEditForm({ ...editForm, type: event.target.value as TransactionType })}
+                >
+                  {transactionTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {formatTransactionType(type)}
+                    </option>
+                  ))}
+                </select>
+              </FormLabel>
+              <FormLabel label="Original amount">
+                <input
+                  className="h-10 w-full px-3"
+                  inputMode="decimal"
+                  value={editForm.amount}
+                  onChange={(event) => setEditForm({ ...editForm, amount: event.target.value })}
+                />
+              </FormLabel>
+              <FormLabel label="Currency">
+                <select
+                  className="h-10 w-full px-3"
+                  value={editForm.currency}
+                  onChange={(event) =>
+                    setEditForm(handleCurrencyChange(editForm, event.target.value as SupportedCurrency))
+                  }
+                >
+                  {currencyOptions.map((currency) => (
+                    <option key={currency} value={currency}>
+                      {currency}
+                    </option>
+                  ))}
+                </select>
+              </FormLabel>
+              <FormLabel label="Exchange rate to USD">
+                <input
+                  className="h-10 w-full px-3"
+                  inputMode="decimal"
+                  value={editForm.exchangeRateToUsd}
+                  onChange={(event) => setEditForm({ ...editForm, exchangeRateToUsd: event.target.value })}
+                />
+              </FormLabel>
+              <FormLabel label="Description">
+                <input
+                  className="h-10 w-full px-3"
+                  value={editForm.description}
+                  onChange={(event) => setEditForm({ ...editForm, description: event.target.value })}
+                />
+              </FormLabel>
+              <FormLabel label="Order code">
+                <input
+                  className="h-10 w-full px-3"
+                  value={editForm.orderCode}
+                  onChange={(event) => setEditForm({ ...editForm, orderCode: event.target.value })}
+                />
+              </FormLabel>
+              {editForm.type === 'manual_adjustment' && (
+                <>
+                  <FormLabel label="Adjustment scope">
+                    <select
+                      className="h-10 w-full px-3"
+                      value={editForm.adjustmentScope}
+                      onChange={(event) =>
+                        setEditForm({ ...editForm, adjustmentScope: event.target.value as ManualAdjustmentScope })
+                      }
+                    >
+                      {adjustmentScopes.map((scope) => (
+                        <option key={scope}>{scope}</option>
+                      ))}
+                    </select>
+                  </FormLabel>
+                  <FormLabel label="Direction">
+                    <select
+                      className="h-10 w-full px-3"
+                      value={editForm.adjustmentDirection}
+                      onChange={(event) =>
+                        setEditForm({ ...editForm, adjustmentDirection: event.target.value as ManualAdjustmentDirection })
+                      }
+                    >
+                      {adjustmentDirections.map((direction) => (
+                        <option key={direction}>{direction}</option>
+                      ))}
+                    </select>
+                  </FormLabel>
+                </>
+              )}
+              <div className="md:col-span-3">
+                <MoneyConversionPreview
+                  amount={editForm.amount}
+                  currency={editForm.currency}
+                  exchangeRateToUsd={editForm.exchangeRateToUsd}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4">
+              <Button onClick={() => setEditingTransaction(null)}>Cancel</Button>
+              <Button variant="primary" onClick={() => void saveEditedTransaction()}>
+                Save Transaction
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </PageShell>
   );
 }
@@ -2717,7 +3105,9 @@ export function AssignmentsPage({
     canViewTransactions: true,
     canAddTransactions: true,
     canEditTransactions: false,
+    canDeleteTransactions: false,
     canViewCommission: true,
+    transactionApprovalMode: 'pending_review' as Assignment['transactionApprovalMode'],
     status: 'active' as AssignmentStatus,
   });
   const [error, setError] = useState('');
@@ -2752,7 +3142,9 @@ export function AssignmentsPage({
       canViewTransactions: true,
       canAddTransactions: true,
       canEditTransactions: false,
+      canDeleteTransactions: false,
       canViewCommission: true,
+      transactionApprovalMode: 'pending_review',
       status: 'active',
     });
     setCreating(true);
@@ -2838,7 +3230,9 @@ export function AssignmentsPage({
         canViewTransactions: createForm.canViewTransactions,
         canAddTransactions: createForm.canAddTransactions,
         canEditTransactions: createForm.canEditTransactions,
+        canDeleteTransactions: createForm.canDeleteTransactions,
         canViewCommission: createForm.canViewCommission,
+        transactionApprovalMode: createForm.transactionApprovalMode,
         status: createForm.status,
       });
       setCreating(false);
@@ -2851,7 +3245,7 @@ export function AssignmentsPage({
   };
 
   return (
-    <PageShell title="Assignments" subtitle="Current mock store access and commission assignments">
+    <PageShell title="Assignments" subtitle="Store access, transaction permissions, and commission assignments">
       <SectionCard
         title="Assignment Matrix"
         subtitle="Rate changes apply to future generated commissions only; existing commission rows are not regenerated automatically."
@@ -2870,6 +3264,8 @@ export function AssignmentsPage({
               <th className="px-4 py-3">View Transactions</th>
               <th className="px-4 py-3">Add Transactions</th>
               <th className="px-4 py-3">Edit Transactions</th>
+              <th className="px-4 py-3">Delete Transactions</th>
+              <th className="px-4 py-3">Approval Mode</th>
               <th className="px-4 py-3">View Commission</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3 text-right">Action</th>
@@ -2887,6 +3283,12 @@ export function AssignmentsPage({
                 <td className="px-4 py-3"><PermissionBadge enabled={row.assignment.canViewTransactions} /></td>
                 <td className="px-4 py-3"><PermissionBadge enabled={row.assignment.canAddTransactions} /></td>
                 <td className="px-4 py-3"><PermissionBadge enabled={row.assignment.canEditTransactions} /></td>
+                <td className="px-4 py-3"><PermissionBadge enabled={row.assignment.canDeleteTransactions} /></td>
+                <td className="px-4 py-3">
+                  <span className="inline-flex rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-700 ring-1 ring-indigo-100">
+                    {row.assignment.transactionApprovalMode === 'confirmed' ? 'Confirmed' : 'Pending Review'}
+                  </span>
+                </td>
                 <td className="px-4 py-3"><PermissionBadge enabled={row.assignment.canViewCommission} /></td>
                 <td className="px-4 py-3"><StatusBadge status={row.assignment.status} /></td>
                 <td className="px-4 py-3 text-right">
@@ -2980,6 +3382,23 @@ export function AssignmentsPage({
                     <option value="inactive">inactive</option>
                   </select>
                 </FormLabel>
+
+                <FormLabel label="Transaction approval mode">
+                  <select
+                    aria-label="New assignment transaction approval mode"
+                    className="h-10 w-full px-3"
+                    value={createForm.transactionApprovalMode}
+                    onChange={(event) =>
+                      setCreateForm({
+                        ...createForm,
+                        transactionApprovalMode: event.target.value as Assignment['transactionApprovalMode'],
+                      })
+                    }
+                  >
+                    <option value="pending_review">Pending Review</option>
+                    <option value="confirmed">Confirmed</option>
+                  </select>
+                </FormLabel>
               </div>
 
               <div className="grid gap-3 md:grid-cols-2">
@@ -2987,6 +3406,7 @@ export function AssignmentsPage({
                   ['Can view transactions', 'canViewTransactions'],
                   ['Can add transactions', 'canAddTransactions'],
                   ['Can edit transactions', 'canEditTransactions'],
+                  ['Can delete transactions', 'canDeleteTransactions'],
                   ['Can view commission', 'canViewCommission'],
                 ].map(([label, key]) => (
                   <label
@@ -3063,6 +3483,22 @@ export function AssignmentsPage({
                     <option value="inactive">inactive</option>
                   </select>
                 </FormLabel>
+
+                <FormLabel label="Transaction approval mode">
+                  <select
+                    aria-label="Assignment transaction approval mode"
+                    className="h-10 w-full px-3"
+                    value={editing.assignment.transactionApprovalMode}
+                    onChange={(event) =>
+                      updateEditingAssignment({
+                        transactionApprovalMode: event.target.value as Assignment['transactionApprovalMode'],
+                      })
+                    }
+                  >
+                    <option value="pending_review">Pending Review</option>
+                    <option value="confirmed">Confirmed</option>
+                  </select>
+                </FormLabel>
               </div>
 
               <div className="grid gap-3 md:grid-cols-2">
@@ -3070,6 +3506,7 @@ export function AssignmentsPage({
                   ['Can view transactions', 'canViewTransactions'],
                   ['Can add transactions', 'canAddTransactions'],
                   ['Can edit transactions', 'canEditTransactions'],
+                  ['Can delete transactions', 'canDeleteTransactions'],
                   ['Can view commission', 'canViewCommission'],
                 ].map(([label, key]) => (
                   <label

@@ -41,6 +41,7 @@ import {
   resolvePendingOrderCost as resolveSupabasePendingOrderCost,
   updatePendingOrderCost as updateSupabasePendingOrderCost,
   rejectTransaction,
+  updateTransaction as updateSupabaseTransaction,
   updateStatementStatus,
   type CreateTransactionInput,
   type PendingOrderCostInput,
@@ -48,6 +49,7 @@ import {
   type ResolvePendingOrderCostInput,
   type RecordDealerPaymentInput,
   type RecordEmployeePaymentInput,
+  type UpdateTransactionInput,
 } from './lib/settlementActivityService';
 
 const initialEmployeeCommissions = generateEmployeeCommissionsForStatements(
@@ -64,7 +66,9 @@ const normalizeAssignment = (assignment: Assignment): Assignment => ({
   canViewTransactions: assignment.canViewTransactions ?? true,
   canAddTransactions: assignment.canAddTransactions ?? true,
   canEditTransactions: assignment.canEditTransactions ?? false,
+  canDeleteTransactions: assignment.canDeleteTransactions ?? false,
   canViewCommission: assignment.canViewCommission ?? true,
+  transactionApprovalMode: assignment.transactionApprovalMode ?? 'pending_review',
   status: assignment.status ?? 'active',
   supabaseId: assignment.supabaseId,
 });
@@ -428,7 +432,49 @@ export function App() {
   const addTransactionStoreIds = useMemo(
     () =>
       employee.assignments
-        .filter((assignment) => assignment.status === 'active' && assignment.canAddTransactions)
+        .filter(
+          (assignment) =>
+            assignment.status === 'active' &&
+            assignment.canViewTransactions &&
+            assignment.canAddTransactions,
+        )
+        .map((assignment) => assignment.storeId),
+    [employee.assignments],
+  );
+  const confirmedTransactionStoreIds = useMemo(
+    () =>
+      employee.assignments
+        .filter(
+          (assignment) =>
+            assignment.status === 'active' &&
+            assignment.canViewTransactions &&
+            assignment.canAddTransactions &&
+            assignment.transactionApprovalMode === 'confirmed',
+        )
+        .map((assignment) => assignment.storeId),
+    [employee.assignments],
+  );
+  const editTransactionStoreIds = useMemo(
+    () =>
+      employee.assignments
+        .filter(
+          (assignment) =>
+            assignment.status === 'active' &&
+            assignment.canViewTransactions &&
+            assignment.canEditTransactions,
+        )
+        .map((assignment) => assignment.storeId),
+    [employee.assignments],
+  );
+  const deleteTransactionStoreIds = useMemo(
+    () =>
+      employee.assignments
+        .filter(
+          (assignment) =>
+            assignment.status === 'active' &&
+            assignment.canViewTransactions &&
+            assignment.canDeleteTransactions,
+        )
         .map((assignment) => assignment.storeId),
     [employee.assignments],
   );
@@ -722,9 +768,13 @@ export function App() {
     if (!usingSupabaseActivityData) return;
 
     try {
-      const created = await createSupabaseTransaction({ dealer, statement, input, role });
+      const status: TransactionStatus =
+        role === 'admin' || confirmedTransactionStoreIds.includes(dealer.storeId)
+          ? 'confirmed'
+          : 'pending_review';
+      const created = await createSupabaseTransaction({ dealer, statement, input: { ...input, status }, role });
       setSupabaseTransactions((previous) => [created, ...(previous ?? [])]);
-      setFlash(role === 'admin' ? 'Transaction added and confirmed in Supabase.' : 'Transaction submitted for admin review.');
+      setFlash(status === 'confirmed' ? 'Transaction added and confirmed in Supabase.' : 'Transaction submitted for admin review.');
     } catch (error) {
       setFlash(friendlySupabaseError(error, 'Transaction could not be created'));
     }
@@ -750,8 +800,54 @@ export function App() {
     }
   };
 
+  const canCurrentUserMutateTransaction = (
+    transaction: SettlementTransaction,
+    action: 'edit' | 'delete',
+  ) => {
+    if (role === 'admin') return true;
+    const dealer = activeDealers.find((row) => row.id === transaction.dealerId);
+    if (!dealer) return false;
+    const allowedStores = action === 'edit' ? editTransactionStoreIds : deleteTransactionStoreIds;
+    if (!allowedStores.includes(dealer.storeId)) return false;
+    if (auth.authEnabled) return transaction.createdBy === auth.user?.id;
+    return transaction.createdByRole === 'employee';
+  };
+
+  const handleUpdateTransaction = async (
+    transaction: SettlementTransaction,
+    patch: UpdateTransactionInput,
+  ) => {
+    if (!canCurrentUserMutateTransaction(transaction, 'edit')) {
+      setFlash('You do not have permission to edit this transaction.');
+      return false;
+    }
+
+    try {
+      if (usingSupabaseActivityData) {
+        const updated = await updateSupabaseTransaction(transaction.supabaseId ?? transaction.id, patch, activeDealers);
+        if (updated) {
+          setSupabaseTransactions((previous) =>
+            (previous ?? []).map((row) => (row.id === transaction.id ? updated : row)),
+          );
+        }
+      } else {
+        setTransactions((previous) =>
+          previous.map((row) => (row.id === transaction.id ? { ...row, ...patch } : row)),
+        );
+      }
+      setFlash('Transaction updated.');
+      return true;
+    } catch (error) {
+      setFlash(friendlySupabaseError(error, 'Transaction could not be updated'));
+      return false;
+    }
+  };
+
   const handleDeleteTransaction = async (transaction: SettlementTransaction) => {
-    if (role !== 'admin') return false;
+    if (!canCurrentUserMutateTransaction(transaction, 'delete')) {
+      setFlash('You do not have permission to delete this transaction.');
+      return false;
+    }
 
     const statement = activeStatements.find((row) => row.id === transaction.statementId);
     if (!statement) {
@@ -1134,7 +1230,9 @@ export function App() {
           canViewTransactions: normalizedAssignment.canViewTransactions,
           canAddTransactions: normalizedAssignment.canAddTransactions,
           canEditTransactions: normalizedAssignment.canEditTransactions,
+          canDeleteTransactions: normalizedAssignment.canDeleteTransactions,
           canViewCommission: normalizedAssignment.canViewCommission,
+          transactionApprovalMode: normalizedAssignment.transactionApprovalMode,
           status: normalizedAssignment.status,
         });
         const mergedAssignment = normalizeAssignment({
@@ -1296,7 +1394,7 @@ export function App() {
         <Route index element={<DashboardPage dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} allocations={activeDealerPaymentAllocations} role={role} employee={{ ...employee, assignments: visibleEmployeeAssignments }} employeeCommissions={role === 'employee' ? employeeVisibleCommissions : activeEmployeeCommissions} employeePaymentAllocations={activeEmployeePaymentAllocations} dealerPayments={activeDealerPayments} employeePayments={activeEmployeePayments} pendingOrderCosts={activePendingOrderCosts} />} />
         <Route path="dealers" element={<DealersPage dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} allocations={activeDealerPaymentAllocations} storeIds={role === 'employee' ? assignedStoreIds : undefined} />} />
         <Route path="dealers/:dealerId" element={<DealerProfilePage role={role} assignedStoreIds={assignedStoreIds} addTransactionStoreIds={addTransactionStoreIds} dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} setStatements={setActiveStatements} setFlash={setFlash} payments={activeDealerPayments} allocations={activeDealerPaymentAllocations} setPayments={setDealerPayments} setAllocations={setDealerPaymentAllocations} employees={employeesWithAssignments} employeeCommissions={activeEmployeeCommissions} setEmployeeCommissions={setEmployeeCommissions} pendingOrderCosts={activePendingOrderCosts} onCreateStatement={usingSupabaseActivityData ? handleCreateStatement : undefined} onUpdateStatementStatus={usingSupabaseActivityData ? handleUpdateStatementStatus : undefined} onRecordDealerPayment={usingSupabaseDealerPaymentData ? handleRecordDealerPayment : undefined} onDeleteStatement={handleDeleteStatement} onUpdateDealer={updateDealer} onCreatePendingOrderCost={handleCreatePendingOrderCost} onUpdatePendingOrderCost={handleUpdatePendingOrderCost} onCancelPendingOrderCost={handleCancelPendingOrderCost} onResolvePendingOrderCost={handleResolvePendingOrderCost} />} />
-        <Route path="statements/:statementId" element={<StatementDetailPage role={role} assignedStoreIds={assignedStoreIds} addTransactionStoreIds={addTransactionStoreIds} dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} setTransactions={setActiveTransactions} setFlash={setFlash} allocations={activeDealerPaymentAllocations} employees={employeesWithAssignments} pendingOrderCosts={activePendingOrderCosts} onCreateTransaction={usingSupabaseActivityData ? handleCreateTransaction : undefined} onDeleteStatement={handleDeleteStatement} onDeleteTransaction={handleDeleteTransaction} onCreatePendingOrderCost={handleCreatePendingOrderCost} onUpdatePendingOrderCost={handleUpdatePendingOrderCost} onCancelPendingOrderCost={handleCancelPendingOrderCost} onResolvePendingOrderCost={handleResolvePendingOrderCost} />} />
+        <Route path="statements/:statementId" element={<StatementDetailPage role={role} assignedStoreIds={assignedStoreIds} addTransactionStoreIds={addTransactionStoreIds} confirmedTransactionStoreIds={confirmedTransactionStoreIds} editTransactionStoreIds={editTransactionStoreIds} deleteTransactionStoreIds={deleteTransactionStoreIds} currentUserId={auth.user?.id} dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} setTransactions={setActiveTransactions} setFlash={setFlash} allocations={activeDealerPaymentAllocations} employees={employeesWithAssignments} pendingOrderCosts={activePendingOrderCosts} onCreateTransaction={usingSupabaseActivityData ? handleCreateTransaction : undefined} onUpdateTransaction={handleUpdateTransaction} onDeleteStatement={handleDeleteStatement} onDeleteTransaction={handleDeleteTransaction} onCreatePendingOrderCost={handleCreatePendingOrderCost} onUpdatePendingOrderCost={handleUpdatePendingOrderCost} onCancelPendingOrderCost={handleCancelPendingOrderCost} onResolvePendingOrderCost={handleResolvePendingOrderCost} />} />
         <Route path="transactions" element={role === 'admin' ? <TransactionsPage role={role} assignedStoreIds={assignedStoreIds} dealers={activeDealers} transactions={activeTransactions} setTransactions={setActiveTransactions} setFlash={setFlash} onUpdateTransactionStatus={usingSupabaseActivityData ? handleTransactionStatus : undefined} onDeleteTransaction={handleDeleteTransaction} /> : <Navigate to="/" replace />} />
         <Route path="employees" element={role === 'admin' ? <EmployeesPage employees={employeesWithAssignments} dealers={activeDealers} commissions={activeEmployeeCommissions} allocations={activeEmployeePaymentAllocations} /> : <Navigate to="/" replace />} />
         <Route path="employees/:employeeId" element={<EmployeeProfilePage role={role} employees={employeesWithAssignments} dealers={activeDealers} commissions={activeEmployeeCommissions} payments={activeEmployeePayments} allocations={activeEmployeePaymentAllocations} setPayments={setEmployeePayments} setAllocations={setEmployeePaymentAllocations} setCommissions={setEmployeeCommissions} setFlash={setFlash} onRecordEmployeePayment={usingSupabaseEmployeeSettlementData ? handleRecordEmployeePayment : undefined} />} />

@@ -237,5 +237,28 @@ RLS expectations:
 
 - Employees cannot insert dealer payments, employee payments, assignment updates, or admin-only reference rows.
 - Employees can select only their active assigned dealers and related statements/transactions according to assignment permissions.
-- Employees can insert only pending transactions for dealers where `can_add_transactions = true`.
+- Employees can insert transactions for dealers where `can_add_transactions = true`; assignment-level `transaction_approval_mode` controls whether the inserted row must be `pending_review` or may be `confirmed`.
+- Employees can update their own transactions only when the active assignment has `can_edit_transactions = true`.
+- Employees can delete their own transactions only when the active assignment has `can_delete_transactions = true`; safe-delete checks still block statement changes with paid or partially paid employee commissions.
 - Employees can select only their own visible commission/payment rows.
+
+## Assignment Transaction Permissions
+
+Migration `202605110003_assignment_transaction_permissions.sql` adds:
+
+- `employee_store_assignments.transaction_approval_mode`, default `pending_review`, with allowed values `pending_review` and `confirmed`.
+- `employee_store_assignments.can_delete_transactions`, default `false`.
+
+The app keeps conservative defaults. Admin users can set the approval mode and delete permission from the Assignments page. In employee sessions:
+
+- `pending_review` mode submits new transactions to the admin approval queue and totals do not change until approval.
+- `confirmed` mode lets the employee create confirmed transactions for that assigned dealer; totals update immediately.
+- Edit and delete actions are still assignment-scoped and dealer-scoped. Employees cannot manage unassigned or inactive dealer transactions.
+
+Admin users continue to approve/reject pending transactions and manage all transaction rows.
+
+## Dealer Currency Display
+
+USD remains the reporting and calculation currency. Dealer Profile summary cards and statement rows may show a smaller secondary amount in the dealer's default currency when it can be derived from stored historical fields (`original_amount`, `original_currency`, `exchange_rate_to_usd`, `usd_amount`).
+
+The app does not call the exchange-rate API for summary cards and does not convert historical USD totals using today's rate. If the underlying records are mixed currency or cannot be reliably represented in the dealer default currency, the UI shows `Mixed currencies` or omits the secondary line. Secondary dealer-currency values are display-only and never feed financial calculations.

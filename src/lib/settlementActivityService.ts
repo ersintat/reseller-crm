@@ -47,6 +47,7 @@ interface TransactionRow {
   description: string | null;
   adjustment_scope: ManualAdjustmentScope | null;
   adjustment_direction: ManualAdjustmentDirection | null;
+  created_by: string | null;
   created_by_role: Role | null;
   status: TransactionStatus;
   created_at: string | null;
@@ -153,7 +154,26 @@ export interface CreateTransactionInput {
   orderCode?: string;
   adjustmentScope?: ManualAdjustmentScope;
   adjustmentDirection?: ManualAdjustmentDirection;
+  status?: TransactionStatus;
 }
+
+export type UpdateTransactionInput = Partial<
+  Pick<
+    SettlementTransaction,
+    | 'date'
+    | 'type'
+    | 'amount'
+    | 'originalAmount'
+    | 'originalCurrency'
+    | 'exchangeRateToUsd'
+    | 'usdAmount'
+    | 'description'
+    | 'orderCode'
+    | 'adjustmentScope'
+    | 'adjustmentDirection'
+    | 'status'
+  >
+>;
 
 export interface RecordDealerPaymentInput {
   dealer: Dealer;
@@ -281,6 +301,7 @@ function mapTransaction(row: TransactionRow, dealers: Dealer[]): SettlementTrans
     orderCode: row.order_code ?? undefined,
     adjustmentScope: row.adjustment_scope ?? undefined,
     adjustmentDirection: row.adjustment_direction ?? undefined,
+    createdBy: row.created_by,
     createdByRole: row.created_by_role ?? undefined,
   };
 }
@@ -539,7 +560,7 @@ export async function fetchTransactions(dealers: Dealer[]): Promise<SettlementTr
   const { data, error } = await supabase
     .from('transactions')
     .select(
-      'id,dealer_id,statement_id,type,amount,currency,original_amount,original_currency,exchange_rate_to_usd,usd_amount,date,order_code,description,adjustment_scope,adjustment_direction,created_by_role,status,created_at',
+      'id,dealer_id,statement_id,type,amount,currency,original_amount,original_currency,exchange_rate_to_usd,usd_amount,date,order_code,description,adjustment_scope,adjustment_direction,created_by,created_by_role,status,created_at',
     )
     .order('date', { ascending: false })
     .order('created_at', { ascending: false });
@@ -740,7 +761,7 @@ export async function createTransaction({
 }): Promise<SettlementTransaction> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const userId = await currentUserId();
-  const status: TransactionStatus = role === 'admin' ? 'confirmed' : 'pending_review';
+  const status: TransactionStatus = role === 'admin' ? 'confirmed' : input.status ?? 'pending_review';
   const money = normalizeMoneyFields(input);
 
   const { data, error } = await supabase
@@ -765,7 +786,7 @@ export async function createTransaction({
       status,
     })
     .select(
-      'id,dealer_id,statement_id,type,amount,currency,original_amount,original_currency,exchange_rate_to_usd,usd_amount,date,order_code,description,adjustment_scope,adjustment_direction,created_by_role,status,created_at',
+      'id,dealer_id,statement_id,type,amount,currency,original_amount,original_currency,exchange_rate_to_usd,usd_amount,date,order_code,description,adjustment_scope,adjustment_direction,created_by,created_by_role,status,created_at',
     )
     .single();
 
@@ -775,20 +796,57 @@ export async function createTransaction({
 
 export async function updateTransaction(
   transactionId: string,
-  patch: Partial<Pick<SettlementTransaction, 'status' | 'description' | 'orderCode'>>,
-): Promise<void> {
+  patch: UpdateTransactionInput,
+  dealers: Dealer[] = [],
+): Promise<SettlementTransaction | void> {
   if (!supabase) throw new Error('Supabase is not configured.');
+  const moneyPatch =
+    patch.amount !== undefined || patch.usdAmount !== undefined
+      ? normalizeMoneyFields({
+          amount: patch.amount ?? patch.usdAmount ?? 0,
+          originalAmount: patch.originalAmount,
+          originalCurrency: patch.originalCurrency,
+          exchangeRateToUsd: patch.exchangeRateToUsd,
+          usdAmount: patch.usdAmount ?? patch.amount,
+        })
+      : null;
 
-  const { error } = await supabase
+  const updatePatch = {
+    ...(patch.date !== undefined ? { date: patch.date } : {}),
+    ...(patch.type !== undefined ? { type: patch.type } : {}),
+    ...(moneyPatch ? {
+      amount: moneyPatch.usdAmount,
+      currency: moneyPatch.originalCurrency,
+      original_amount: moneyPatch.originalAmount,
+      original_currency: moneyPatch.originalCurrency,
+      exchange_rate_to_usd: moneyPatch.exchangeRateToUsd,
+      usd_amount: moneyPatch.usdAmount,
+    } : {}),
+    ...(patch.status !== undefined ? { status: patch.status } : {}),
+    ...(patch.description !== undefined ? { description: patch.description } : {}),
+    ...(patch.orderCode !== undefined ? { order_code: patch.orderCode } : {}),
+    ...(patch.type !== undefined && patch.type !== 'manual_adjustment'
+      ? { adjustment_scope: null, adjustment_direction: null }
+      : {}),
+    ...(patch.adjustmentScope !== undefined
+      ? { adjustment_scope: patch.type === 'manual_adjustment' ? patch.adjustmentScope : null }
+      : {}),
+    ...(patch.adjustmentDirection !== undefined
+      ? { adjustment_direction: patch.type === 'manual_adjustment' ? patch.adjustmentDirection : null }
+      : {}),
+  };
+
+  const { data, error } = await supabase
     .from('transactions')
-    .update({
-      status: patch.status,
-      description: patch.description,
-      order_code: patch.orderCode,
-    })
-    .eq('id', transactionId);
+    .update(updatePatch)
+    .eq('id', transactionId)
+    .select(
+      'id,dealer_id,statement_id,type,amount,currency,original_amount,original_currency,exchange_rate_to_usd,usd_amount,date,order_code,description,adjustment_scope,adjustment_direction,created_by,created_by_role,status,created_at',
+    )
+    .single();
 
   if (error) throw error;
+  return mapTransaction(data as TransactionRow, dealers);
 }
 
 export const approveTransaction = (transactionId: string) =>

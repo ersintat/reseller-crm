@@ -31,7 +31,9 @@ interface AssignmentRow {
   can_view_transactions: boolean;
   can_add_transactions: boolean;
   can_edit_transactions: boolean;
+  can_delete_transactions?: boolean;
   can_view_commission: boolean;
+  transaction_approval_mode?: Assignment['transactionApprovalMode'];
   status: 'active' | 'inactive';
 }
 
@@ -47,7 +49,9 @@ type AssignmentUpdate = Pick<
   | 'canViewTransactions'
   | 'canAddTransactions'
   | 'canEditTransactions'
+  | 'canDeleteTransactions'
   | 'canViewCommission'
+  | 'transactionApprovalMode'
   | 'status'
 >;
 
@@ -58,7 +62,9 @@ export interface AssignmentCreateInput {
   canViewTransactions: boolean;
   canAddTransactions: boolean;
   canEditTransactions: boolean;
+  canDeleteTransactions: boolean;
   canViewCommission: boolean;
+  transactionApprovalMode: Assignment['transactionApprovalMode'];
   status: Assignment['status'];
 }
 
@@ -153,7 +159,7 @@ export async function fetchEmployeeStoreAssignments(
   const { data, error } = await supabase
     .from('employee_store_assignments')
     .select(
-      'id,employee_id,dealer_id,commission_rate,can_view_transactions,can_add_transactions,can_edit_transactions,can_view_commission,status',
+      'id,employee_id,dealer_id,commission_rate,can_view_transactions,can_add_transactions,can_edit_transactions,can_delete_transactions,can_view_commission,transaction_approval_mode,status',
     )
     .order('created_at', { ascending: true });
 
@@ -176,7 +182,9 @@ export async function fetchEmployeeStoreAssignments(
         canViewTransactions: row.can_view_transactions,
         canAddTransactions: row.can_add_transactions,
         canEditTransactions: row.can_edit_transactions,
+        canDeleteTransactions: row.can_delete_transactions ?? false,
         canViewCommission: row.can_view_commission,
+        transactionApprovalMode: row.transaction_approval_mode ?? 'pending_review',
         status: row.status,
         supabaseId: row.id,
       },
@@ -209,7 +217,9 @@ export async function updateEmployeeStoreAssignment(
   if (updates.canViewTransactions !== undefined) patch.can_view_transactions = updates.canViewTransactions;
   if (updates.canAddTransactions !== undefined) patch.can_add_transactions = updates.canAddTransactions;
   if (updates.canEditTransactions !== undefined) patch.can_edit_transactions = updates.canEditTransactions;
+  if (updates.canDeleteTransactions !== undefined) patch.can_delete_transactions = updates.canDeleteTransactions;
   if (updates.canViewCommission !== undefined) patch.can_view_commission = updates.canViewCommission;
+  if (updates.transactionApprovalMode !== undefined) patch.transaction_approval_mode = updates.transactionApprovalMode;
   if (updates.status !== undefined) patch.status = updates.status;
 
   const { data, error } = await supabase
@@ -217,7 +227,7 @@ export async function updateEmployeeStoreAssignment(
     .update(patch)
     .eq('id', assignmentId)
     .select(
-      'id,employee_id,dealer_id,commission_rate,can_view_transactions,can_add_transactions,can_edit_transactions,can_view_commission,status',
+      'id,employee_id,dealer_id,commission_rate,can_view_transactions,can_add_transactions,can_edit_transactions,can_delete_transactions,can_view_commission,transaction_approval_mode,status',
     )
     .single();
 
@@ -231,7 +241,9 @@ export async function updateEmployeeStoreAssignment(
     canViewTransactions: row.can_view_transactions,
     canAddTransactions: row.can_add_transactions,
     canEditTransactions: row.can_edit_transactions,
+    canDeleteTransactions: row.can_delete_transactions ?? false,
     canViewCommission: row.can_view_commission,
+    transactionApprovalMode: row.transaction_approval_mode ?? 'pending_review',
     status: row.status,
     supabaseId: row.id,
   };
@@ -251,11 +263,13 @@ export async function createEmployeeStoreAssignment(
       can_view_transactions: input.canViewTransactions,
       can_add_transactions: input.canAddTransactions,
       can_edit_transactions: input.canEditTransactions,
+      can_delete_transactions: input.canDeleteTransactions,
       can_view_commission: input.canViewCommission,
+      transaction_approval_mode: input.transactionApprovalMode,
       status: input.status,
     })
     .select(
-      'id,employee_id,dealer_id,commission_rate,can_view_transactions,can_add_transactions,can_edit_transactions,can_view_commission,status',
+      'id,employee_id,dealer_id,commission_rate,can_view_transactions,can_add_transactions,can_edit_transactions,can_delete_transactions,can_view_commission,transaction_approval_mode,status',
     )
     .single();
 
@@ -269,7 +283,9 @@ export async function createEmployeeStoreAssignment(
     canViewTransactions: row.can_view_transactions,
     canAddTransactions: row.can_add_transactions,
     canEditTransactions: row.can_edit_transactions,
+    canDeleteTransactions: row.can_delete_transactions ?? false,
     canViewCommission: row.can_view_commission,
+    transactionApprovalMode: row.transaction_approval_mode ?? 'pending_review',
     status: row.status,
     supabaseId: row.id,
   };

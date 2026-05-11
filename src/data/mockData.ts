@@ -28,7 +28,9 @@ const defaultAssignmentPermissions = {
   canViewTransactions: true,
   canAddTransactions: true,
   canEditTransactions: false,
+  canDeleteTransactions: false,
   canViewCommission: true,
+  transactionApprovalMode: 'pending_review' as const,
   status: 'active' as const,
 };
 

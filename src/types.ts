@@ -8,6 +8,7 @@ export type PaymentAllocationMode = 'fifo' | 'manual';
 export type CommissionStatus = 'open' | 'partially_paid' | 'paid' | 'closed';
 export type PendingOrderCostScope = 'printing' | 'shipping' | 'both';
 export type PendingOrderCostStatus = 'pending' | 'partially_resolved' | 'resolved' | 'cancelled';
+export type TransactionApprovalMode = 'pending_review' | 'confirmed';
 
 export interface Store { id: string; name: string }
 export interface Dealer {
@@ -31,7 +32,7 @@ export interface MoneyInUsd {
   exchangeRateToUsd?: number;
   usdAmount?: number;
 }
-export interface SettlementTransaction extends MoneyInUsd { id: string; dealerId: string; statementId: string; date: string; type: TransactionType; status: TransactionStatus; description?: string; orderCode?: string; adjustmentScope?: ManualAdjustmentScope; adjustmentDirection?: ManualAdjustmentDirection; notes?: string; createdByRole?: Role; supabaseId?: string }
+export interface SettlementTransaction extends MoneyInUsd { id: string; dealerId: string; statementId: string; date: string; type: TransactionType; status: TransactionStatus; description?: string; orderCode?: string; adjustmentScope?: ManualAdjustmentScope; adjustmentDirection?: ManualAdjustmentDirection; notes?: string; createdBy?: string | null; createdByRole?: Role; supabaseId?: string }
 export interface DealerPayment extends MoneyInUsd { id: string; dealerId: string; currency: string; paymentDate: string; description: string; allocationMode: PaymentAllocationMode; createdBy: Role; createdAt: string }
 export interface DealerPaymentAllocation { id: string; paymentId: string; statementId: string; allocatedAmount: number; allocatedUsdAmount?: number }
 export interface EmployeeCommission { id: string; employeeId: string; dealerId: string; statementId: string; periodMonth: number; periodYear: number; companyShareAmount: number; printingCosts: number; shippingCosts: number; commissionBaseAdjustments: number; commissionBase: number; commissionRate: number; commissionAmount: number; paidAmount: number; remainingAmount: number; status: CommissionStatus; createdAt: string; currency?: string; supabaseId?: string }
@@ -58,5 +59,5 @@ export interface PendingOrderCost {
   updatedAt?: string | null;
 }
 export type AssignmentStatus = 'active' | 'inactive';
-export interface Assignment { storeId: string; commissionRatePct: number; canViewTransactions: boolean; canAddTransactions: boolean; canEditTransactions: boolean; canViewCommission: boolean; status: AssignmentStatus; supabaseId?: string; dealerId?: string }
+export interface Assignment { storeId: string; commissionRatePct: number; canViewTransactions: boolean; canAddTransactions: boolean; canEditTransactions: boolean; canDeleteTransactions: boolean; canViewCommission: boolean; transactionApprovalMode: TransactionApprovalMode; status: AssignmentStatus; supabaseId?: string; dealerId?: string }
 export interface Employee { id: string; name: string; roleTitle: string; assignments: Assignment[]; email?: string | null; status?: 'active' | 'inactive'; supabaseId?: string }
