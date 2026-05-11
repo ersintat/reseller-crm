@@ -36,6 +36,7 @@ import {
   getOpenStatementsForDealer,
   getStatementPaidAmount,
   getStatementRemainingAmount,
+  sortStatementsByPeriod,
 } from '../lib/statementCalculations';
 import { PageShell } from './Shared';
 import { StatusBadge } from '../components/ui/StatusBadge';
@@ -439,7 +440,9 @@ export function DealerProfilePage({
   if (role === 'employee' && !assignedStoreIds.includes(dealer.storeId)) return <Navigate to="/dealers" replace />;
   const canAddDealerTransaction = role === 'admin' || addTransactionStoreIds.includes(dealer.storeId);
 
-  const dealerStatements = statements.filter((statement) => statement.dealerId === dealer.id);
+  const dealerStatements = sortStatementsByPeriod(
+    statements.filter((statement) => statement.dealerId === dealer.id),
+  );
   const openStatements = getOpenStatementsForDealer(dealer.id, statements, transactions, dealers, allocations);
   const ledger = getDealerLedgerRows(dealer.id, statements, transactions, dealers, payments, allocations);
   const openBalance = getDealerOpenBalance(dealer.id, statements, transactions, dealers, allocations);
@@ -1141,6 +1144,7 @@ interface StatementDetailPageProps {
     },
   ) => Promise<void> | void;
   onDeleteStatement?: (statement: Statement) => Promise<boolean> | boolean;
+  onDeleteTransaction?: (transaction: SettlementTransaction) => Promise<boolean> | boolean;
 }
 
 export function StatementDetailPage({
@@ -1156,6 +1160,7 @@ export function StatementDetailPage({
   employees,
   onCreateTransaction,
   onDeleteStatement,
+  onDeleteTransaction,
 }: StatementDetailPageProps) {
   const { statementId } = useParams();
   const navigate = useNavigate();
@@ -1245,6 +1250,23 @@ export function StatementDetailPage({
     ]);
     setFlash(role === 'admin' ? 'Transaction added and confirmed.' : 'Transaction submitted for admin review.');
     setForm((previous) => ({ ...previous, amount: '', description: '', orderCode: '' }));
+  };
+
+  const deleteTransaction = (transaction: SettlementTransaction) => {
+    if (onDeleteTransaction) {
+      void onDeleteTransaction(transaction);
+      return;
+    }
+
+    if (
+      !window.confirm(
+        'Delete this transaction? Statement totals will be recalculated. This action cannot be undone.',
+      )
+    ) {
+      return;
+    }
+    setTransactions((previous) => previous.filter((row) => row.id !== transaction.id));
+    setFlash('Transaction deleted.');
   };
 
   return (
@@ -1429,6 +1451,7 @@ export function StatementDetailPage({
               <th className="px-4 py-3 text-right">USD Amount</th>
               <th className="px-4 py-3">Order</th>
               <th className="px-4 py-3">Description</th>
+              {role === 'admin' && <th className="px-4 py-3 text-right">Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -1453,6 +1476,13 @@ export function StatementDetailPage({
                 <td className="px-4 py-3 text-right font-semibold">{formatUsd(transaction.usdAmount ?? transaction.amount)}</td>
                 <td className="px-4 py-3">{transaction.orderCode || '-'}</td>
                 <td className="px-4 py-3">{transaction.description || '-'}</td>
+                {role === 'admin' && (
+                  <td className="px-4 py-3 text-right">
+                    <Button variant="danger" onClick={() => deleteTransaction(transaction)}>
+                      Delete
+                    </Button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -1528,6 +1558,7 @@ interface TransactionsPageProps {
   setTransactions: Dispatch<SetStateAction<SettlementTransaction[]>>;
   setFlash: (value: string) => void;
   onUpdateTransactionStatus?: (transactionId: string, status: TransactionStatus) => Promise<void> | void;
+  onDeleteTransaction?: (transaction: SettlementTransaction) => Promise<boolean> | boolean;
 }
 
 export function TransactionsPage({
@@ -1538,6 +1569,7 @@ export function TransactionsPage({
   setTransactions,
   setFlash,
   onUpdateTransactionStatus,
+  onDeleteTransaction,
 }: TransactionsPageProps) {
   const [filters, setFilters] = useState({ dealerId: '', type: '', status: '', q: '' });
   const visibleDealers = role === 'admin' ? dealers : dealers.filter((dealer) => assignedStoreIds.includes(dealer.storeId));
@@ -1568,6 +1600,22 @@ export function TransactionsPage({
       previous.map((transaction) => (transaction.id === transactionId ? { ...transaction, status } : transaction)),
     );
     setFlash(status === 'confirmed' ? 'Transaction approved.' : 'Transaction rejected.');
+  };
+  const deleteTransaction = (transaction: SettlementTransaction) => {
+    if (onDeleteTransaction) {
+      void onDeleteTransaction(transaction);
+      return;
+    }
+
+    if (
+      !window.confirm(
+        'Delete this transaction? Statement totals will be recalculated. This action cannot be undone.',
+      )
+    ) {
+      return;
+    }
+    setTransactions((previous) => previous.filter((row) => row.id !== transaction.id));
+    setFlash('Transaction deleted.');
   };
   const pendingRows = rows.filter((transaction) => transaction.status === 'pending_review');
 
@@ -1661,6 +1709,9 @@ export function TransactionsPage({
                       <Button variant="danger" onClick={() => updateStatus(transaction.id, 'rejected')}>
                         Reject
                       </Button>
+                      <Button variant="danger" onClick={() => deleteTransaction(transaction)}>
+                        Delete
+                      </Button>
                     </div>
                   </td>
                 </tr>
@@ -1709,13 +1760,20 @@ export function TransactionsPage({
                   <td className="px-4 py-3 text-right font-semibold">{formatUsd(transaction.usdAmount ?? transaction.amount)}</td>
                   <td className="px-4 py-3">{transaction.orderCode || '-'}</td>
                   <td className="px-4 py-3 text-right">
-                    {role === 'admin' && transaction.status === 'pending_review' && (
+                    {role === 'admin' && (
                       <div className="flex justify-end gap-2">
-                        <Button variant="primary" onClick={() => updateStatus(transaction.id, 'confirmed')}>
-                          Approve
-                        </Button>
-                        <Button variant="danger" onClick={() => updateStatus(transaction.id, 'rejected')}>
-                          Reject
+                        {transaction.status === 'pending_review' && (
+                          <>
+                            <Button variant="primary" onClick={() => updateStatus(transaction.id, 'confirmed')}>
+                              Approve
+                            </Button>
+                            <Button variant="danger" onClick={() => updateStatus(transaction.id, 'rejected')}>
+                              Reject
+                            </Button>
+                          </>
+                        )}
+                        <Button variant="danger" onClick={() => deleteTransaction(transaction)}>
+                          Delete
                         </Button>
                       </div>
                     )}

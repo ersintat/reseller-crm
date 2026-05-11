@@ -341,8 +341,8 @@ export async function fetchStatements(dealers: Dealer[]): Promise<Statement[]> {
   const { data, error } = await supabase
     .from('statements')
     .select('id,dealer_id,period_month,period_year,status,paid_amount,created_at')
-    .order('period_year', { ascending: false })
-    .order('period_month', { ascending: false });
+    .order('period_year', { ascending: true })
+    .order('period_month', { ascending: true });
 
   if (error) throw error;
   return ((data ?? []) as StatementRow[]).map((row) => mapStatement(row, dealers));
@@ -526,6 +526,48 @@ export const approveTransaction = (transactionId: string) =>
 
 export const rejectTransaction = (transactionId: string) =>
   updateTransaction(transactionId, { status: 'rejected' });
+
+export async function deleteTransactionSafely(transactionId: string, statementId: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+
+  const { data: commissions, error: commissionError } = await supabase
+    .from('employee_commissions')
+    .select('id,status,paid_amount')
+    .eq('statement_id', statementId);
+
+  if (commissionError) throw commissionError;
+
+  const commissionRows = (commissions ?? []) as Pick<EmployeeCommissionRow, 'id' | 'status' | 'paid_amount'>[];
+  const commissionIds = commissionRows.map((commission) => commission.id);
+
+  if (commissionIds.length > 0) {
+    const { count: employeeAllocationCount, error: employeeAllocationError } = await supabase
+      .from('employee_payment_allocations')
+      .select('id', { count: 'exact', head: true })
+      .in('commission_id', commissionIds);
+
+    if (employeeAllocationError) throw employeeAllocationError;
+    if ((employeeAllocationCount ?? 0) > 0) {
+      throw new Error('This transaction cannot be deleted because the statement has paid employee commissions.');
+    }
+  }
+
+  const hasPaidCommission = commissionRows.some(
+    (commission) =>
+      ['paid', 'partially_paid'].includes(commission.status) || toNumber(commission.paid_amount) > 0,
+  );
+  if (hasPaidCommission) {
+    throw new Error('This transaction cannot be deleted because the statement has paid employee commissions.');
+  }
+
+  if (commissionIds.length > 0) {
+    const { error } = await supabase.from('employee_commissions').delete().in('id', commissionIds);
+    if (error) throw error;
+  }
+
+  const { error: transactionError } = await supabase.from('transactions').delete().eq('id', transactionId);
+  if (transactionError) throw transactionError;
+}
 
 export async function fetchDealerPayments(dealers: Dealer[]): Promise<DealerPayment[]> {
   if (!supabase) return [];

@@ -36,6 +36,12 @@ export interface CommissionPreview {
 const isConfirmed = (transaction: SettlementTransaction) => transaction.status === 'confirmed';
 const isCommissionEligibleAssignment = (assignment: Assignment) => assignment.status === 'active';
 
+export const compareStatementPeriods = (a: Statement, b: Statement) =>
+  a.month.localeCompare(b.month) || (a.createdAt || '').localeCompare(b.createdAt || '');
+
+export const sortStatementsByPeriod = (statements: Statement[]) =>
+  [...statements].sort(compareStatementPeriods);
+
 export const getUsdAmount = <T extends { amount: number; usdAmount?: number }>(row: T) =>
   row.usdAmount ?? row.amount;
 
@@ -133,6 +139,7 @@ export const getOpenStatementsForDealer = (
 
   return statements
     .filter((statement) => statement.dealerId === dealerId)
+    .sort(compareStatementPeriods)
     .map((statement) => ({
       statement,
       remaining: getStatementRemainingAmount(statement, transactions, dealer, allocations),

@@ -165,7 +165,7 @@ export function DashboardPage({
         : null;
 
       return {
-        date: statement.createdAt || `${statement.month}-01`,
+        date: `${statement.month}-01`,
         kind: 'Statement',
         title: `${dealer?.name || 'Dealer'} settlement`,
         amount: totalsForStatement?.dealer_receivable_amount ?? 0,
