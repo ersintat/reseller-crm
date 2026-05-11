@@ -274,8 +274,10 @@ function formatSecondaryCurrencyAmount(amount: number, currency: SupportedCurren
   return `≈ ${formatCurrencyAmount(amount, currency)} ${currency}`;
 }
 
-function secondaryText(value: { amount: number; mixed: boolean } | null, currency: SupportedCurrency) {
-  if (!value) return undefined;
+function secondaryText(value: { amount: number; mixed: boolean } | null, currency: SupportedCurrency, primaryUsdValue = 0) {
+  if (!value) {
+    return Math.abs(primaryUsdValue) < 0.001 ? formatSecondaryCurrencyAmount(0, currency) : undefined;
+  }
   if (value.mixed) return 'Mixed currencies';
   return formatSecondaryCurrencyAmount(value.amount, currency);
 }
@@ -804,17 +806,13 @@ function StatementBreakdown({ statement, dealer, transactions, allocations }: {
 }) {
   const paid = getEffectiveStatementPaidAmount(statement, allocations);
   const totals = calculateStatementTotals(statement, transactions, dealer, paid);
-  const dealerSecondaryCurrency = getDealerSecondaryCurrency(dealer);
-  const secondaryTotals = dealerSecondaryCurrency
-    ? calculateOriginalStatementTotals(statement, dealer, transactions, dealerSecondaryCurrency)
-    : null;
   const rows = [
-    ['Platform payout', totals.total_bank_payouts, secondaryTotals?.totalBankPayouts],
+    ['Platform payout', totals.total_bank_payouts],
     [`Dealer share (${formatPercent(dealer.dealerSharePercentage)})`, totals.dealer_share_amount],
-    [`Company share (${formatPercent(dealer.companySharePercentage)})`, totals.company_share_amount, secondaryTotals?.companyShare],
+    [`Company share (${formatPercent(dealer.companySharePercentage)})`, totals.company_share_amount],
     ['Printing cost', totals.total_printing_costs],
     ['Shipping cost', totals.total_shipping_costs],
-    ['Dealer receivable', totals.dealer_receivable_amount, secondaryTotals?.dealerReceivable],
+    ['Dealer receivable', totals.dealer_receivable_amount],
     ['Paid', totals.paid_amount],
     ['Remaining', totals.remaining_amount],
   ];
@@ -828,15 +826,10 @@ function StatementBreakdown({ statement, dealer, transactions, allocations }: {
       <div className="space-y-4 p-5">
         <InfoCallout>{platformPayoutHelper}</InfoCallout>
         <div className="grid gap-3 md:grid-cols-4">
-        {rows.map(([label, value, secondary]) => (
+        {rows.map(([label, value]) => (
           <div key={String(label)} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</p>
             <p className="mt-1 text-base font-semibold text-slate-950">{formatUsd(Number(value))}</p>
-            {dealerSecondaryCurrency && secondary !== undefined && secondaryTotals && (
-              <p className="mt-0.5 text-xs font-medium text-slate-500">
-                {secondaryTotals.mixed ? 'Mixed currencies' : formatSecondaryCurrencyAmount(Number(secondary), dealerSecondaryCurrency)}
-              </p>
-            )}
           </div>
         ))}
         </div>
@@ -1236,25 +1229,25 @@ export function DealerProfilePage({
         <SummaryCard
           label="Open Balance"
           value={formatUsd(openBalance)}
-          secondary={dealerSecondaryCurrency ? secondaryText(secondaryOpenBalance, dealerSecondaryCurrency) : undefined}
+          secondary={dealerSecondaryCurrency ? secondaryText(secondaryOpenBalance, dealerSecondaryCurrency, openBalance) : undefined}
           helper="Sum of statement remaining amounts."
         />
         <SummaryCard
           label="Current Month Receivable"
           value={formatUsd(currentMonthReceivable)}
-          secondary={dealerSecondaryCurrency ? secondaryText(secondaryCurrentReceivable, dealerSecondaryCurrency) : undefined}
+          secondary={dealerSecondaryCurrency ? secondaryText(secondaryCurrentReceivable, dealerSecondaryCurrency, currentMonthReceivable) : undefined}
           helper="Current period: April 2026."
         />
         <SummaryCard
           label="Total Paid"
           value={formatUsd(totalPaid)}
-          secondary={dealerSecondaryCurrency ? secondaryText(secondaryPaid, dealerSecondaryCurrency) : undefined}
+          secondary={dealerSecondaryCurrency ? secondaryText(secondaryPaid, dealerSecondaryCurrency, totalPaid) : undefined}
           helper="Seed paid amount plus allocated payments."
         />
         <SummaryCard
           label="Last Payment"
           value={lastPayment ? formatUsd(lastPayment.amount) : formatUsd(0)}
-          secondary={dealerSecondaryCurrency ? secondaryText(secondaryLastPayment, dealerSecondaryCurrency) : undefined}
+          secondary={dealerSecondaryCurrency ? secondaryText(secondaryLastPayment, dealerSecondaryCurrency, lastPayment?.amount ?? 0) : undefined}
           helper={lastPayment ? lastPayment.paymentDate : 'No recorded dealer payment.'}
         />
       </div>
@@ -1531,35 +1524,15 @@ export function DealerProfilePage({
                 dealer,
                 getEffectiveStatementPaidAmount(statement, allocations),
               );
-              const secondaryTotals = dealerSecondaryCurrency
-                ? calculateOriginalStatementTotals(statement, dealer, transactions, dealerSecondaryCurrency)
-                : null;
-              const renderSecondary = (amount?: number) => {
-                if (!dealerSecondaryCurrency || !secondaryTotals) return null;
-                return (
-                  <p className="mt-0.5 text-xs font-medium text-slate-500">
-                    {secondaryTotals.mixed ? 'Mixed currencies' : formatSecondaryCurrencyAmount(amount ?? 0, dealerSecondaryCurrency)}
-                  </p>
-                );
-              };
               return (
                 <tr key={statement.id} className="border-t border-slate-100 transition hover:bg-slate-50">
                   <td className="px-4 py-3 font-medium text-slate-950">{statement.month}</td>
                   <td className="px-4 py-3">
                     <StatusBadge status={statement.status} />
                   </td>
-                  <td className="px-4 py-3 text-right">
-                    {formatUsd(totals.total_bank_payouts)}
-                    {renderSecondary(secondaryTotals?.totalBankPayouts)}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    {formatUsd(totals.company_share_amount)}
-                    {renderSecondary(secondaryTotals?.companyShare)}
-                  </td>
-                  <td className="px-4 py-3 text-right font-semibold text-slate-950">
-                    {formatUsd(totals.dealer_receivable_amount)}
-                    {renderSecondary(secondaryTotals?.dealerReceivable)}
-                  </td>
+                  <td className="px-4 py-3 text-right">{formatUsd(totals.total_bank_payouts)}</td>
+                  <td className="px-4 py-3 text-right">{formatUsd(totals.company_share_amount)}</td>
+                  <td className="px-4 py-3 text-right font-semibold text-slate-950">{formatUsd(totals.dealer_receivable_amount)}</td>
                   <td className="px-4 py-3 text-right text-emerald-700">{formatUsd(totals.paid_amount)}</td>
                   <td className="px-4 py-3 text-right font-semibold text-slate-950">{formatUsd(totals.remaining_amount)}</td>
                   <td className="px-4 py-3 text-right">
