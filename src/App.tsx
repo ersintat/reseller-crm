@@ -266,10 +266,8 @@ export function App() {
     setActivityError('');
 
     const loadActivity = async () => {
-      const [nextStatements, nextTransactions] = await Promise.all([
-        fetchStatements(activeDealers),
-        fetchTransactions(activeDealers),
-      ]);
+      const nextStatements = await fetchStatements(activeDealers);
+      const nextTransactions = await fetchTransactions(activeDealers, nextStatements);
       const nextPendingOrderCosts = await fetchPendingOrderCosts(activeDealers, nextStatements);
       return { nextStatements, nextTransactions, nextPendingOrderCosts };
     };
@@ -824,7 +822,12 @@ export function App() {
 
     try {
       if (usingSupabaseActivityData) {
-        const updated = await updateSupabaseTransaction(transaction.supabaseId ?? transaction.id, patch, activeDealers);
+        const updated = await updateSupabaseTransaction(
+          transaction.supabaseId ?? transaction.id,
+          patch,
+          activeDealers,
+          activeStatements,
+        );
         if (updated) {
           setSupabaseTransactions((previous) =>
             (previous ?? []).map((row) => (row.id === transaction.id ? updated : row)),

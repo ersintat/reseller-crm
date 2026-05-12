@@ -2505,7 +2505,7 @@ export function TransactionsPage({
   const rows = useMemo(
     () =>
       transactions
-        .filter((transaction) => visibleIds.has(transaction.dealerId))
+        .filter((transaction) => role === 'admin' || visibleIds.has(transaction.dealerId))
         .filter((transaction) => !filters.dealerId || transaction.dealerId === filters.dealerId)
         .filter((transaction) => !filters.type || transaction.type === filters.type)
         .filter((transaction) => !filters.status || transaction.status === filters.status)
@@ -2515,7 +2515,7 @@ export function TransactionsPage({
             (transaction.orderCode || '').includes(filters.q) ||
             (transaction.description || '').toLowerCase().includes(filters.q.toLowerCase()),
         ),
-    [transactions, visibleIds, filters],
+    [transactions, visibleIds, filters, role],
   );
 
   const updateStatus = (transactionId: string, status: TransactionStatus) => {

@@ -268,6 +268,9 @@ const dealerBySupabaseId = (dealers: Dealer[]) =>
 const employeeBySupabaseId = (employees: Employee[]) =>
   new Map(employees.map((employee) => [employee.supabaseId ?? employee.id, employee]));
 
+const statementBySupabaseId = (statements: Statement[]) =>
+  new Map(statements.map((statement) => [statement.supabaseId ?? statement.id, statement]));
+
 function mapStatement(row: StatementRow, dealers: Dealer[]): Statement {
   const dealer = dealerBySupabaseId(dealers).get(row.dealer_id);
   return {
@@ -281,14 +284,18 @@ function mapStatement(row: StatementRow, dealers: Dealer[]): Statement {
   };
 }
 
-function mapTransaction(row: TransactionRow, dealers: Dealer[]): SettlementTransaction {
-  const dealer = dealerBySupabaseId(dealers).get(row.dealer_id);
+function mapTransaction(row: TransactionRow, dealers: Dealer[], statements: Statement[] = []): SettlementTransaction {
+  const statement = statementBySupabaseId(statements).get(row.statement_id);
+  const dealerFromStatement = statement
+    ? dealers.find((candidate) => candidate.id === statement.dealerId)
+    : undefined;
+  const dealer = dealerBySupabaseId(dealers).get(row.dealer_id) ?? dealerFromStatement;
   const usdAmount = toNumber(row.usd_amount ?? row.amount);
   return {
     id: row.id,
     supabaseId: row.id,
-    dealerId: dealer?.id ?? row.dealer_id,
-    statementId: row.statement_id,
+    dealerId: dealer?.id ?? statement?.dealerId ?? row.dealer_id,
+    statementId: statement?.id ?? row.statement_id,
     date: row.date,
     type: row.type,
     status: row.status,
@@ -554,7 +561,7 @@ export async function deleteStatementSafely(statementId: string): Promise<void> 
   if (statementError) throw statementError;
 }
 
-export async function fetchTransactions(dealers: Dealer[]): Promise<SettlementTransaction[]> {
+export async function fetchTransactions(dealers: Dealer[], statements: Statement[] = []): Promise<SettlementTransaction[]> {
   if (!supabase) return [];
 
   const { data, error } = await supabase
@@ -566,7 +573,7 @@ export async function fetchTransactions(dealers: Dealer[]): Promise<SettlementTr
     .order('created_at', { ascending: false });
 
   if (error) throw error;
-  return ((data ?? []) as TransactionRow[]).map((row) => mapTransaction(row, dealers));
+  return ((data ?? []) as TransactionRow[]).map((row) => mapTransaction(row, dealers, statements));
 }
 
 const pendingOrderCostSelect =
@@ -791,13 +798,14 @@ export async function createTransaction({
     .single();
 
   if (error) throw error;
-  return mapTransaction(data as TransactionRow, [dealer]);
+  return mapTransaction(data as TransactionRow, [dealer], [statement]);
 }
 
 export async function updateTransaction(
   transactionId: string,
   patch: UpdateTransactionInput,
   dealers: Dealer[] = [],
+  statements: Statement[] = [],
 ): Promise<SettlementTransaction | void> {
   if (!supabase) throw new Error('Supabase is not configured.');
   const moneyPatch =
@@ -846,7 +854,7 @@ export async function updateTransaction(
     .single();
 
   if (error) throw error;
-  return mapTransaction(data as TransactionRow, dealers);
+  return mapTransaction(data as TransactionRow, dealers, statements);
 }
 
 export const approveTransaction = (transactionId: string) =>
