@@ -3127,6 +3127,7 @@ export function EmployeeProfilePage({
   role,
   employees,
   dealers,
+  transactions,
   commissions,
   payments,
   allocations,
@@ -3135,10 +3136,12 @@ export function EmployeeProfilePage({
   setCommissions,
   setFlash,
   onRecordEmployeePayment,
+  onRecalculateCommissions,
 }: {
   role: Role;
   employees: Employee[];
   dealers: Dealer[];
+  transactions: SettlementTransaction[];
   commissions: EmployeeCommission[];
   payments: EmployeePayment[];
   allocations: EmployeePaymentAllocation[];
@@ -3147,6 +3150,7 @@ export function EmployeeProfilePage({
   setCommissions: Dispatch<SetStateAction<EmployeeCommission[]>>;
   setFlash: (value: string) => void;
   onRecordEmployeePayment?: (input: RecordEmployeePaymentInput) => Promise<void> | void;
+  onRecalculateCommissions?: (employee: Employee) => Promise<void> | void;
 }) {
   const { employeeId } = useParams();
   const [form, setForm] = useState({
@@ -3159,6 +3163,7 @@ export function EmployeeProfilePage({
   });
   const [manual, setManual] = useState<Record<string, string>>({});
   const [showZeroCommissionRows, setShowZeroCommissionRows] = useState(false);
+  const [recalculating, setRecalculating] = useState(false);
   const employeePaymentRate = useExchangeRateAutofill({
     currency: form.currency,
     date: form.paymentDate,
@@ -3175,8 +3180,39 @@ export function EmployeeProfilePage({
   const ledgerRows = rows.filter(
     (row) => !row.commission || showZeroCommissionRows || !isZeroCommissionRow(row.commission),
   );
+  const activeAssignedStoreIds = new Set(
+    employee.assignments
+      .filter((assignment) => assignment.status === 'active')
+      .map((assignment) => assignment.storeId),
+  );
+  const assignedDealerIds = new Set(
+    dealers
+      .filter((dealer) => activeAssignedStoreIds.has(dealer.storeId))
+      .map((dealer) => dealer.id),
+  );
+  const pendingAssignedTransactions = transactions.filter(
+    (transaction) => transaction.status === 'pending_review' && assignedDealerIds.has(transaction.dealerId),
+  );
+  const pendingAssignedStoreNames = Array.from(
+    new Set(
+      pendingAssignedTransactions.map((transaction) => {
+        const dealer = dealers.find((row) => row.id === transaction.dealerId);
+        return dealer?.storeName || dealer?.name || transaction.dealerId;
+      }),
+    ),
+  );
   const paymentUsdPreview = calculateUsdPreview(form.amount, form.currency, form.exchangeRateToUsd);
   let running = 0;
+
+  const recalculateCommissions = async () => {
+    if (!onRecalculateCommissions) return;
+    setRecalculating(true);
+    try {
+      await onRecalculateCommissions(employee);
+    } finally {
+      setRecalculating(false);
+    }
+  };
 
   const submit = async () => {
     const originalAmount = parsePositiveNumber(form.amount);
@@ -3323,6 +3359,34 @@ export function EmployeeProfilePage({
           helper="Most recent employee payment amount."
         />
       </div>
+
+      <SectionCard
+        title="Commission Controls"
+        subtitle="Refresh open commission rows from current confirmed transactions and assignment rates."
+        action={
+          <Button variant="primary" onClick={() => void recalculateCommissions()} disabled={recalculating}>
+            {recalculating ? 'Recalculating...' : 'Recalculate Commissions'}
+          </Button>
+        }
+      >
+        <div className="space-y-3 p-5">
+          <InfoCallout>
+            Recalculation uses current confirmed transactions and current store assignment rates. Paid or partially paid
+            commission rows are preserved.
+          </InfoCallout>
+          {pendingAssignedTransactions.length > 0 && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <p className="font-semibold">
+                {pendingAssignedTransactions.length} pending transaction
+                {pendingAssignedTransactions.length === 1 ? '' : 's'} for assigned stores are not included in commission totals.
+              </p>
+              <p className="mt-1 text-xs text-amber-800">
+                Pending review rows become eligible only after admin approval. Stores: {pendingAssignedStoreNames.join(', ')}.
+              </p>
+            </div>
+          )}
+        </div>
+      </SectionCard>
 
       <SectionCard title="Record Employee Payment" subtitle="Allocate commission payments with FIFO or manual controls.">
         <div className="space-y-4 p-5">

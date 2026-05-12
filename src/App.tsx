@@ -1141,6 +1141,54 @@ export function App() {
     }
   };
 
+  const handleRecalculateEmployeeCommissions = async (targetEmployee: Employee) => {
+    if (role !== 'admin') return;
+
+    const generated = generateEmployeeCommissionsForStatements(
+      activeStatements,
+      activeDealers,
+      [targetEmployee],
+      activeTransactions,
+      activeEmployeeCommissions,
+    );
+    const existingByKey = new Map(activeEmployeeCommissions.map((commission) => [commissionKey(commission), commission]));
+    const nextRows = generated.filter((commission) => {
+      if (commission.employeeId !== targetEmployee.id) return false;
+      const existing = existingByKey.get(commissionKey(commission));
+      return !existing || !['paid', 'partially_paid'].includes(existing.status);
+    });
+
+    if (usingSupabaseEmployeeSettlementData) {
+      try {
+        const synced = await createOrUpdateEmployeeCommissions({
+          commissions: nextRows,
+          employees: employeesWithAssignments,
+          dealers: activeDealers,
+          statements: activeStatements,
+        });
+        setSupabaseEmployeeCommissions((previous) => mergeEmployeeCommissions(previous ?? [], synced));
+        setCommissionSyncStatus('ok');
+        setFlash(
+          synced.length === 0
+            ? 'No open commission rows needed recalculation.'
+            : `${synced.length} commission row${synced.length === 1 ? '' : 's'} recalculated.`,
+        );
+      } catch (error) {
+        console.warn('Manual employee commission recalculation failed.', error);
+        setCommissionSyncStatus('failed');
+        setFlash('Commission recalculation could not be completed. Please refresh or try again.');
+      }
+      return;
+    }
+
+    setEmployeeCommissions(generated);
+    setFlash(
+      nextRows.length === 0
+        ? 'No open commission rows needed recalculation.'
+        : `${nextRows.length} commission row${nextRows.length === 1 ? '' : 's'} recalculated.`,
+    );
+  };
+
   const updateAssignment = async (employeeId: string, nextAssignment: Assignment) => {
     const updateState = (previous: EmployeeAssignmentState | null): EmployeeAssignmentState => {
       const currentState = previous ?? {};
@@ -1413,7 +1461,7 @@ export function App() {
         <Route path="statements/:statementId" element={<StatementDetailPage role={role} assignedStoreIds={assignedStoreIds} addTransactionStoreIds={addTransactionStoreIds} confirmedTransactionStoreIds={confirmedTransactionStoreIds} editTransactionStoreIds={editTransactionStoreIds} deleteTransactionStoreIds={deleteTransactionStoreIds} currentUserId={auth.user?.id} dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} setTransactions={setActiveTransactions} setFlash={setFlash} allocations={activeDealerPaymentAllocations} employees={employeesWithAssignments} pendingOrderCosts={activePendingOrderCosts} onCreateTransaction={usingSupabaseActivityData ? handleCreateTransaction : undefined} onUpdateTransaction={handleUpdateTransaction} onDeleteStatement={handleDeleteStatement} onDeleteTransaction={handleDeleteTransaction} onCreatePendingOrderCost={handleCreatePendingOrderCost} onUpdatePendingOrderCost={handleUpdatePendingOrderCost} onCancelPendingOrderCost={handleCancelPendingOrderCost} onResolvePendingOrderCost={handleResolvePendingOrderCost} />} />
         <Route path="transactions" element={role === 'admin' ? <TransactionsPage role={role} assignedStoreIds={assignedStoreIds} dealers={activeDealers} transactions={activeTransactions} setTransactions={setActiveTransactions} setFlash={setFlash} onUpdateTransactionStatus={usingSupabaseActivityData ? handleTransactionStatus : undefined} onDeleteTransaction={handleDeleteTransaction} /> : <Navigate to="/" replace />} />
         <Route path="employees" element={role === 'admin' ? <EmployeesPage employees={employeesWithAssignments} dealers={activeDealers} commissions={activeEmployeeCommissions} allocations={activeEmployeePaymentAllocations} /> : <Navigate to="/" replace />} />
-        <Route path="employees/:employeeId" element={<EmployeeProfilePage role={role} employees={employeesWithAssignments} dealers={activeDealers} commissions={activeEmployeeCommissions} payments={activeEmployeePayments} allocations={activeEmployeePaymentAllocations} setPayments={setEmployeePayments} setAllocations={setEmployeePaymentAllocations} setCommissions={setEmployeeCommissions} setFlash={setFlash} onRecordEmployeePayment={usingSupabaseEmployeeSettlementData ? handleRecordEmployeePayment : undefined} />} />
+        <Route path="employees/:employeeId" element={<EmployeeProfilePage role={role} employees={employeesWithAssignments} dealers={activeDealers} transactions={activeTransactions} commissions={activeEmployeeCommissions} payments={activeEmployeePayments} allocations={activeEmployeePaymentAllocations} setPayments={setEmployeePayments} setAllocations={setEmployeePaymentAllocations} setCommissions={setEmployeeCommissions} setFlash={setFlash} onRecordEmployeePayment={usingSupabaseEmployeeSettlementData ? handleRecordEmployeePayment : undefined} onRecalculateCommissions={handleRecalculateEmployeeCommissions} />} />
         <Route path="assignments" element={role === 'admin' ? <AssignmentsPage employees={employeesWithAssignments} dealers={activeDealers} onUpdateAssignment={updateAssignment} onCreateAssignment={createAssignment} /> : <Navigate to="/" replace />} />
         <Route path="settings" element={role === 'admin' ? <SettingsPage onResetDemoData={resetDemoData} dataModeLabel={referenceStatusLabel} commissionSyncStatus={commissionSyncStatus} /> : <Navigate to="/" replace />} />
         <Route path="my-commissions" element={<MyCommissionsPage role={role} employee={employee} dealers={activeDealers} commissions={role === 'employee' ? employeeVisibleCommissions : activeEmployeeCommissions} payments={activeEmployeePayments} allocations={activeEmployeePaymentAllocations} />} />
