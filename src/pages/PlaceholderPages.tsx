@@ -1529,11 +1529,11 @@ export function DealerProfilePage({
           <DataTable>
             <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3">Type</th>
-                <th className="px-4 py-3">Description</th>
-                <th className="px-4 py-3 text-right">Amount</th>
-                <th className="px-4 py-3 text-right">Running</th>
+                <th className="w-28 whitespace-nowrap px-4 py-3">Date</th>
+                <th className="w-40 whitespace-nowrap px-4 py-3">Type</th>
+                <th className="min-w-72 px-4 py-3">Description</th>
+                <th className="w-32 whitespace-nowrap px-4 py-3 text-right">Amount</th>
+                <th className="w-32 whitespace-nowrap px-4 py-3 text-right">Running</th>
               </tr>
             </thead>
             <tbody>
@@ -1545,15 +1545,15 @@ export function DealerProfilePage({
                     key={`${row.date}-${index}`}
                     className={isPayment ? 'border-t border-slate-100 bg-emerald-50/40' : 'border-t border-slate-100 hover:bg-slate-50'}
                   >
-                    <td className="px-4 py-3 text-slate-600">{row.date}</td>
-                    <td className="px-4 py-3 font-medium text-slate-900">
+                    <td className="whitespace-nowrap px-4 py-3.5 text-slate-600">{row.date}</td>
+                    <td className="whitespace-nowrap px-4 py-3.5 font-medium text-slate-900">
                       {row.kind}
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{row.description}</td>
-                    <td className={isPayment ? 'px-4 py-3 text-right font-semibold text-emerald-700' : 'px-4 py-3 text-right font-semibold text-slate-950'}>
+                    <td className="max-w-xl px-4 py-3.5 text-slate-600">{row.description}</td>
+                    <td className={isPayment ? 'whitespace-nowrap px-4 py-3.5 text-right font-semibold text-emerald-700' : 'whitespace-nowrap px-4 py-3.5 text-right font-semibold text-slate-950'}>
                       {formatUsd(row.amount)}
                     </td>
-                    <td className="px-4 py-3 text-right font-semibold text-slate-950">{formatUsd(running)}</td>
+                    <td className="whitespace-nowrap px-4 py-3.5 text-right font-semibold text-slate-950">{formatUsd(running)}</td>
                   </tr>
                 );
               })}
@@ -1572,15 +1572,15 @@ export function DealerProfilePage({
           <DataTable>
             <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-4 py-3">Month</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Platform Payout</th>
-                <th className="px-4 py-3 text-right">Dealer Share</th>
-                <th className="px-4 py-3 text-right">Company Share</th>
-                <th className="px-4 py-3 text-right">Dealer Receivable</th>
-                <th className="px-4 py-3 text-right">Paid</th>
-                <th className="px-4 py-3 text-right">Remaining</th>
-                <th className="px-4 py-3 text-right">Actions</th>
+                <th className="w-28 whitespace-nowrap px-4 py-3">Month</th>
+                <th className="w-36 whitespace-nowrap px-4 py-3">Status</th>
+                <th className="w-36 whitespace-nowrap px-4 py-3 text-right">Platform Payout</th>
+                <th className="w-32 whitespace-nowrap px-4 py-3 text-right">Dealer Share</th>
+                <th className="w-36 whitespace-nowrap px-4 py-3 text-right">Company Share</th>
+                <th className="w-40 whitespace-nowrap px-4 py-3 text-right">Dealer Receivable</th>
+                <th className="w-28 whitespace-nowrap px-4 py-3 text-right">Paid</th>
+                <th className="w-32 whitespace-nowrap px-4 py-3 text-right">Remaining</th>
+                <th className="w-44 whitespace-nowrap px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -1593,30 +1593,30 @@ export function DealerProfilePage({
               );
               return (
                 <tr key={statement.id} className="border-t border-slate-100 transition hover:bg-slate-50">
-                  <td className="px-4 py-3 font-medium text-slate-950">{statement.month}</td>
-                  <td className="px-4 py-3">
+                  <td className="whitespace-nowrap px-4 py-3.5 font-medium tabular-nums text-slate-950">{statement.month}</td>
+                  <td className="whitespace-nowrap px-4 py-3.5">
                     <StatusBadge status={statement.status} />
                   </td>
-                  <td className="px-4 py-3 text-right">{formatUsd(totals.total_bank_payouts)}</td>
-                  <td className="px-4 py-3 text-right">{formatUsd(totals.dealer_share_amount)}</td>
-                  <td className="px-4 py-3 text-right">{formatUsd(totals.company_share_amount)}</td>
-                  <td className="px-4 py-3 text-right font-semibold text-slate-950">{formatUsd(totals.dealer_receivable_amount)}</td>
-                  <td className="px-4 py-3 text-right text-emerald-700">{formatUsd(totals.paid_amount)}</td>
-                  <td className="px-4 py-3 text-right font-semibold text-slate-950">{formatUsd(totals.remaining_amount)}</td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex justify-end gap-2">
-                      <Link className="rounded-lg px-2.5 py-1.5 font-medium text-indigoBrand hover:bg-indigo-50" to={`/statements/${statement.id}`}>
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right tabular-nums">{formatUsd(totals.total_bank_payouts)}</td>
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right tabular-nums">{formatUsd(totals.dealer_share_amount)}</td>
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right tabular-nums">{formatUsd(totals.company_share_amount)}</td>
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right font-semibold tabular-nums text-slate-950">{formatUsd(totals.dealer_receivable_amount)}</td>
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right tabular-nums text-emerald-700">{formatUsd(totals.paid_amount)}</td>
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right font-semibold tabular-nums text-slate-950">{formatUsd(totals.remaining_amount)}</td>
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right">
+                    <div className="inline-flex items-center justify-end gap-1.5">
+                      <Link className="whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-semibold text-indigoBrand hover:bg-indigo-50" to={`/statements/${statement.id}`}>
                         View
                       </Link>
                       {role === 'employee' && canAddDealerTransaction && (
-                        <Link className="rounded-lg px-2.5 py-1.5 font-medium text-indigoBrand hover:bg-indigo-50" to={`/statements/${statement.id}#add-transaction`}>
+                        <Link className="whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-semibold text-indigoBrand hover:bg-indigo-50" to={`/statements/${statement.id}#add-transaction`}>
                           Add Transaction
                         </Link>
                       )}
                       {role === 'admin' && (
                         <>
                           <button
-                            className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-indigoBrand hover:bg-indigo-50"
+                            className="whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-semibold text-indigoBrand hover:bg-indigo-50"
                             onClick={() => {
                               if (onUpdateStatementStatus) {
                                 void onUpdateStatementStatus(statement, 'closed');
@@ -1642,7 +1642,7 @@ export function DealerProfilePage({
                             Close
                           </button>
                           <button
-                            className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
+                            className="whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
                             onClick={() => {
                               void onDeleteStatement?.(statement);
                             }}
