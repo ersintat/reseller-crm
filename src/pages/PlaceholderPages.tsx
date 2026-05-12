@@ -2500,6 +2500,7 @@ export function TransactionsPage({
   onDeleteTransaction,
 }: TransactionsPageProps) {
   const [filters, setFilters] = useState({ dealerId: '', type: '', status: '', q: '' });
+  const [selectedPendingIds, setSelectedPendingIds] = useState<Set<string>>(() => new Set());
   const visibleDealers = role === 'admin' ? dealers : dealers.filter((dealer) => assignedStoreIds.includes(dealer.storeId));
   const visibleIds = useMemo(() => new Set(visibleDealers.map((dealer) => dealer.id)), [visibleDealers]);
   const rows = useMemo(
@@ -2517,6 +2518,17 @@ export function TransactionsPage({
         ),
     [transactions, visibleIds, filters, role],
   );
+
+  useEffect(() => {
+    setSelectedPendingIds((current) => {
+      const validPendingIds = new Set(
+        transactions
+          .filter((transaction) => transaction.status === 'pending_review')
+          .map((transaction) => transaction.id),
+      );
+      return new Set([...current].filter((id) => validPendingIds.has(id)));
+    });
+  }, [transactions]);
 
   const updateStatus = (transactionId: string, status: TransactionStatus) => {
     if (onUpdateTransactionStatus) {
@@ -2546,10 +2558,69 @@ export function TransactionsPage({
     setFlash('Transaction deleted.');
   };
   const pendingRows = rows.filter((transaction) => transaction.status === 'pending_review');
+  const selectedVisiblePendingRows = pendingRows.filter((transaction) => selectedPendingIds.has(transaction.id));
+  const allVisiblePendingSelected =
+    pendingRows.length > 0 && pendingRows.every((transaction) => selectedPendingIds.has(transaction.id));
+  const togglePendingSelection = (transactionId: string) => {
+    setSelectedPendingIds((current) => {
+      const next = new Set(current);
+      if (next.has(transactionId)) next.delete(transactionId);
+      else next.add(transactionId);
+      return next;
+    });
+  };
+  const toggleAllVisiblePending = () => {
+    setSelectedPendingIds((current) => {
+      const next = new Set(current);
+      if (allVisiblePendingSelected) {
+        pendingRows.forEach((transaction) => next.delete(transaction.id));
+      } else {
+        pendingRows.forEach((transaction) => next.add(transaction.id));
+      }
+      return next;
+    });
+  };
+  const approveSelected = async () => {
+    if (role !== 'admin' || selectedVisiblePendingRows.length === 0) return;
+    if (
+      !window.confirm(
+        'Approve selected pending transactions? Confirmed transactions will affect statement totals.',
+      )
+    ) {
+      return;
+    }
+
+    if (onUpdateTransactionStatus) {
+      await Promise.all(
+        selectedVisiblePendingRows.map((transaction) =>
+          onUpdateTransactionStatus(transaction.id, 'confirmed'),
+        ),
+      );
+    } else {
+      const selectedIds = new Set(selectedVisiblePendingRows.map((transaction) => transaction.id));
+      setTransactions((previous) =>
+        previous.map((transaction) =>
+          selectedIds.has(transaction.id) ? { ...transaction, status: 'confirmed' } : transaction,
+        ),
+      );
+    }
+    setSelectedPendingIds(new Set());
+    setFlash(`${selectedVisiblePendingRows.length} pending transactions approved.`);
+  };
 
   return (
     <PageShell title="Transactions" subtitle="Global transaction management and approval queue">
-      <SectionCard title="Transaction Filters" subtitle="Narrow the approval and ledger views without changing source data.">
+      <SectionCard
+        title="Transaction Filters"
+        subtitle="Narrow the approval and ledger views without changing source data."
+        action={
+          role === 'admin' && selectedVisiblePendingRows.length > 0 ? (
+            <Button variant="primary" onClick={() => void approveSelected()}>
+              Approve Selected ({selectedVisiblePendingRows.length})
+            </Button>
+          ) : undefined
+        }
+      >
         <div className="grid gap-3 p-5 md:grid-cols-4">
           <FormLabel label="Dealer">
             <select
@@ -2600,6 +2671,20 @@ export function TransactionsPage({
             />
           </FormLabel>
         </div>
+        <div className="flex flex-wrap gap-2 border-t border-slate-100 px-5 py-3">
+          <button
+            className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-100"
+            onClick={() => setFilters({ ...filters, status: 'pending_review' })}
+          >
+            Pending Review
+          </button>
+          <button
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+            onClick={() => setFilters({ ...filters, status: '' })}
+          >
+            All Status
+          </button>
+        </div>
       </SectionCard>
 
       <SectionCard className="border-amber-200 shadow-amber-50" title="Approval Queue" subtitle="Employee-submitted transactions waiting for admin review.">
@@ -2609,6 +2694,15 @@ export function TransactionsPage({
           <DataTable>
             <thead className="bg-amber-50/80 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
+                <th className="px-4 py-3">
+                  <input
+                    aria-label="Select all pending transactions"
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-slate-300 text-indigoBrand"
+                    checked={allVisiblePendingSelected}
+                    onChange={toggleAllVisiblePending}
+                  />
+                </th>
                 <th className="px-4 py-3">Date</th>
                 <th className="px-4 py-3">Dealer</th>
                 <th className="px-4 py-3">Type</th>
@@ -2622,6 +2716,15 @@ export function TransactionsPage({
             <tbody>
               {pendingRows.map((transaction) => (
                 <tr key={transaction.id} className="border-t border-amber-100 bg-amber-50/50">
+                  <td className="px-4 py-3">
+                    <input
+                      aria-label={`Select pending transaction ${transaction.id}`}
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-slate-300 text-indigoBrand"
+                      checked={selectedPendingIds.has(transaction.id)}
+                      onChange={() => togglePendingSelection(transaction.id)}
+                    />
+                  </td>
                   <td className="px-4 py-3">{transaction.date}</td>
                   <td className="px-4 py-3 font-medium text-slate-950">{dealers.find((dealer) => dealer.id === transaction.dealerId)?.name}</td>
                   <td className="px-4 py-3">{formatTransactionType(transaction.type)}</td>
@@ -2656,6 +2759,7 @@ export function TransactionsPage({
           <DataTable>
             <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
+                {role === 'admin' && <th className="px-4 py-3">Select</th>}
                 <th className="px-4 py-3">Dealer</th>
                 <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Status</th>
@@ -2678,6 +2782,21 @@ export function TransactionsPage({
                         : 'transition hover:bg-slate-50'
                   }`}
                 >
+                  {role === 'admin' && (
+                    <td className="px-4 py-3">
+                      {transaction.status === 'pending_review' ? (
+                        <input
+                          aria-label={`Select transaction ${transaction.id}`}
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-slate-300 text-indigoBrand"
+                          checked={selectedPendingIds.has(transaction.id)}
+                          onChange={() => togglePendingSelection(transaction.id)}
+                        />
+                      ) : (
+                        <span className="text-xs text-slate-300">-</span>
+                      )}
+                    </td>
+                  )}
                   <td className="px-4 py-3 font-medium text-slate-950">{dealers.find((dealer) => dealer.id === transaction.dealerId)?.name}</td>
                   <td className="px-4 py-3">{formatTransactionType(transaction.type)}</td>
                   <td className="px-4 py-3">
@@ -3306,7 +3425,7 @@ export function AssignmentsPage({
               <th className="px-4 py-3">Add Transactions</th>
               <th className="px-4 py-3">Edit Transactions</th>
               <th className="px-4 py-3">Delete Transactions</th>
-              <th className="px-4 py-3">Approval Mode</th>
+              <th className="px-4 py-3">Employee Transaction Approval</th>
               <th className="px-4 py-3">View Commission</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3 text-right">Action</th>
@@ -3327,7 +3446,7 @@ export function AssignmentsPage({
                 <td className="px-4 py-3"><PermissionBadge enabled={row.assignment.canDeleteTransactions} /></td>
                 <td className="px-4 py-3">
                   <span className="inline-flex rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-700 ring-1 ring-indigo-100">
-                    {row.assignment.transactionApprovalMode === 'confirmed' ? 'Confirmed' : 'Pending Review'}
+                    {row.assignment.transactionApprovalMode === 'confirmed' ? 'Confirmed Immediately' : 'Pending Review'}
                   </span>
                 </td>
                 <td className="px-4 py-3"><PermissionBadge enabled={row.assignment.canViewCommission} /></td>
@@ -3424,9 +3543,9 @@ export function AssignmentsPage({
                   </select>
                 </FormLabel>
 
-                <FormLabel label="Transaction approval mode">
+                <FormLabel label="Employee Transaction Approval">
                   <select
-                    aria-label="New assignment transaction approval mode"
+                    aria-label="New assignment employee transaction approval"
                     className="h-10 w-full px-3"
                     value={createForm.transactionApprovalMode}
                     onChange={(event) =>
@@ -3437,10 +3556,14 @@ export function AssignmentsPage({
                     }
                   >
                     <option value="pending_review">Pending Review</option>
-                    <option value="confirmed">Confirmed</option>
+                    <option value="confirmed">Confirmed Immediately</option>
                   </select>
                 </FormLabel>
               </div>
+
+              <InfoCallout>
+                When set to Confirmed Immediately, employee-created transactions affect statement totals as soon as they are submitted.
+              </InfoCallout>
 
               <div className="grid gap-3 md:grid-cols-2">
                 {[
@@ -3525,9 +3648,9 @@ export function AssignmentsPage({
                   </select>
                 </FormLabel>
 
-                <FormLabel label="Transaction approval mode">
+                <FormLabel label="Employee Transaction Approval">
                   <select
-                    aria-label="Assignment transaction approval mode"
+                    aria-label="Assignment employee transaction approval"
                     className="h-10 w-full px-3"
                     value={editing.assignment.transactionApprovalMode}
                     onChange={(event) =>
@@ -3537,10 +3660,14 @@ export function AssignmentsPage({
                     }
                   >
                     <option value="pending_review">Pending Review</option>
-                    <option value="confirmed">Confirmed</option>
+                    <option value="confirmed">Confirmed Immediately</option>
                   </select>
                 </FormLabel>
               </div>
+
+              <InfoCallout>
+                When set to Confirmed Immediately, employee-created transactions affect statement totals as soon as they are submitted.
+              </InfoCallout>
 
               <div className="grid gap-3 md:grid-cols-2">
                 {[
