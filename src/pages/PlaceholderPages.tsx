@@ -260,6 +260,121 @@ function SummaryCard({ label, value, helper, secondary }: { label: string; value
   );
 }
 
+function formatCommissionPeriod(commission: EmployeeCommission) {
+  return `${commission.periodYear}-${String(commission.periodMonth).padStart(2, '0')}`;
+}
+
+function formatCommissionRate(rate: number) {
+  return `${(rate * 100).toFixed(3).replace(/0+$/, '').replace(/\.$/, '')}%`;
+}
+
+function getCommissionDealerName(commission: EmployeeCommission, dealers: Dealer[]) {
+  const dealer = dealers.find((row) => row.id === commission.dealerId || row.supabaseId === commission.dealerId);
+  return dealer?.storeName || dealer?.name || commission.dealerId;
+}
+
+function getZeroCommissionNote(commission: EmployeeCommission) {
+  if (commission.commissionAmount > 0) return '';
+  const costs = commission.printingCosts + commission.shippingCosts;
+  if (commission.companyShareAmount <= 0) return 'No company share.';
+  if (commission.commissionBase <= 0 && costs > commission.companyShareAmount + commission.commissionBaseAdjustments) {
+    return 'Costs exceed company share.';
+  }
+  if (commission.commissionBase <= 0) return 'Commission base is zero.';
+  return 'Commission amount is zero.';
+}
+
+function getCommissionLedgerDetails(commission: EmployeeCommission, dealers: Dealer[]) {
+  const zeroNote = getZeroCommissionNote(commission);
+  return (
+    <div className="space-y-1">
+      <p className="font-medium text-slate-900">
+        {getCommissionDealerName(commission, dealers)} · {formatCommissionPeriod(commission)} · Base{' '}
+        {formatUsd(commission.commissionBase)} × {formatCommissionRate(commission.commissionRate)}
+      </p>
+      <p className="text-xs text-slate-500">
+        Company share {formatUsd(commission.companyShareAmount)} · Printing {formatUsd(commission.printingCosts)} ·
+        Shipping {formatUsd(commission.shippingCosts)}
+        {commission.commissionBaseAdjustments !== 0
+          ? ` · Adjustments ${formatUsd(commission.commissionBaseAdjustments)}`
+          : ''}
+      </p>
+      {zeroNote && <p className="text-xs font-medium text-amber-700">{zeroNote}</p>}
+    </div>
+  );
+}
+
+function CommissionBreakdownTable({
+  commissions,
+  dealers,
+  allocations,
+}: {
+  commissions: EmployeeCommission[];
+  dealers: Dealer[];
+  allocations: EmployeePaymentAllocation[];
+}) {
+  const rows = [...commissions].sort((a, b) => {
+    const periodCompare = formatCommissionPeriod(a).localeCompare(formatCommissionPeriod(b));
+    if (periodCompare !== 0) return periodCompare;
+    return getCommissionDealerName(a, dealers).localeCompare(getCommissionDealerName(b, dealers));
+  });
+
+  if (rows.length === 0) {
+    return <EmptyState title="No generated commission rows yet." />;
+  }
+
+  return (
+    <DataTable>
+      <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">
+        <tr>
+          <th className="px-4 py-3 whitespace-nowrap">Store</th>
+          <th className="px-4 py-3 whitespace-nowrap">Period</th>
+          <th className="px-4 py-3 text-right whitespace-nowrap">Company Share</th>
+          <th className="px-4 py-3 text-right whitespace-nowrap">Printing</th>
+          <th className="px-4 py-3 text-right whitespace-nowrap">Shipping</th>
+          <th className="px-4 py-3 text-right whitespace-nowrap">Adjustments</th>
+          <th className="px-4 py-3 text-right whitespace-nowrap">Commission Base</th>
+          <th className="px-4 py-3 text-right whitespace-nowrap">Rate</th>
+          <th className="px-4 py-3 text-right whitespace-nowrap">Commission</th>
+          <th className="px-4 py-3 text-right whitespace-nowrap">Paid</th>
+          <th className="px-4 py-3 text-right whitespace-nowrap">Remaining</th>
+          <th className="px-4 py-3 whitespace-nowrap">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((commission) => {
+          const paid = getEmployeeCommissionPaidAmount(commission.id, allocations);
+          const remaining = Math.max(commission.commissionAmount - paid, 0);
+          const zeroNote = getZeroCommissionNote(commission);
+          return (
+            <tr key={commission.id} className="border-t border-slate-100 transition hover:bg-slate-50">
+              <td className="px-4 py-3 font-medium text-slate-950 whitespace-nowrap">
+                {getCommissionDealerName(commission, dealers)}
+              </td>
+              <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{formatCommissionPeriod(commission)}</td>
+              <td className="px-4 py-3 text-right text-slate-700 whitespace-nowrap">{formatUsd(commission.companyShareAmount)}</td>
+              <td className="px-4 py-3 text-right text-slate-700 whitespace-nowrap">{formatUsd(commission.printingCosts)}</td>
+              <td className="px-4 py-3 text-right text-slate-700 whitespace-nowrap">{formatUsd(commission.shippingCosts)}</td>
+              <td className="px-4 py-3 text-right text-slate-700 whitespace-nowrap">{formatUsd(commission.commissionBaseAdjustments)}</td>
+              <td className="px-4 py-3 text-right font-semibold text-slate-950 whitespace-nowrap">{formatUsd(commission.commissionBase)}</td>
+              <td className="px-4 py-3 text-right text-slate-700 whitespace-nowrap">{formatCommissionRate(commission.commissionRate)}</td>
+              <td className="px-4 py-3 text-right font-semibold text-slate-950 whitespace-nowrap">
+                {formatUsd(commission.commissionAmount)}
+                {zeroNote && <p className="mt-1 text-xs font-medium text-amber-700 whitespace-normal">{zeroNote}</p>}
+              </td>
+              <td className="px-4 py-3 text-right text-emerald-700 font-semibold whitespace-nowrap">{formatUsd(paid)}</td>
+              <td className="px-4 py-3 text-right font-semibold text-slate-950 whitespace-nowrap">{formatUsd(remaining)}</td>
+              <td className="px-4 py-3 whitespace-nowrap">
+                <StatusBadge status={commission.status} />
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </DataTable>
+  );
+}
+
 function getDealerSecondaryCurrency(dealer: Dealer): SupportedCurrency | null {
   const currency = dealer.currency as SupportedCurrency | undefined;
   if (!currency || currency === 'USD' || !currencyOptions.includes(currency)) return null;
@@ -2939,6 +3054,7 @@ export function EmployeesPage({ employees, dealers, commissions, allocations }: 
 export function EmployeeProfilePage({
   role,
   employees,
+  dealers,
   commissions,
   payments,
   allocations,
@@ -2980,6 +3096,7 @@ export function EmployeeProfilePage({
   const employee = employees.find((row) => row.id === employeeId);
   if (!employee) return <PageShell title="Employee Profile" subtitle="Not found" />;
 
+  const employeeCommissions = commissions.filter((commission) => commission.employeeId === employee.id);
   const openCommissions = getOpenCommissionsForEmployee(employee.id, commissions, allocations);
   const rows = getEmployeeCommissionLedgerRows(employee.id, commissions, payments);
   const paymentUsdPreview = calculateUsdPreview(form.amount, form.currency, form.exchangeRateToUsd);
@@ -3245,6 +3362,13 @@ export function EmployeeProfilePage({
         </div>
       </SectionCard>
 
+      <SectionCard
+        title="Commission Breakdown"
+        subtitle="Store-level commission math for each generated statement row."
+      >
+        <CommissionBreakdownTable commissions={employeeCommissions} dealers={dealers} allocations={allocations} />
+      </SectionCard>
+
       <SectionCard title="Commission Ledger" subtitle="Commission accruals and employee payment activity.">
         {rows.length === 0 ? (
           <EmptyState title="No commission or payment records yet." />
@@ -3265,12 +3389,14 @@ export function EmployeeProfilePage({
                 const isPayment = row.amount < 0;
                 return (
                   <tr
-                    key={`${row.date}-${index}`}
+                    key={row.commission?.id || row.payment?.id || `${row.date}-${index}`}
                     className={isPayment ? 'border-t border-slate-100 bg-emerald-50/40' : 'border-t border-slate-100 transition hover:bg-slate-50'}
                   >
                     <td className="px-4 py-3 text-slate-600">{row.date}</td>
                     <td className="px-4 py-3 font-medium text-slate-950">{row.kind}</td>
-                    <td className="px-4 py-3 text-slate-600">{row.description || '-'}</td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {row.commission ? getCommissionLedgerDetails(row.commission, dealers) : row.description || '-'}
+                    </td>
                     <td className={isPayment ? 'px-4 py-3 text-right font-semibold text-emerald-700' : 'px-4 py-3 text-right font-semibold text-slate-950'}>
                       {formatUsd(row.amount)}
                     </td>
@@ -3812,6 +3938,7 @@ export function SettingsPage({
 export function MyCommissionsPage({
   role,
   employee,
+  dealers,
   commissions,
   payments,
   allocations,
@@ -3841,29 +3968,46 @@ export function MyCommissionsPage({
           value={formatUsd(getCurrentMonthEmployeeCommission(employee.id, commissions))}
         />
       </div>
-      {rows.length === 0 && (
-        <div className="bg-white border rounded-lg p-4 text-slate-500">No commission or payment records yet.</div>
-      )}
-      <table className="w-full bg-white border rounded-lg text-sm">
-        <thead className="bg-slate-100">
-          <tr>
-            <th className="p-2 text-left">Date</th>
-            <th>Type</th>
-            <th>Details</th>
-            <th>Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => (
-            <tr key={`${row.date}-${index}`} className="border-t">
-              <td className="p-2">{row.date}</td>
-              <td>{row.kind}</td>
-              <td>{row.description || '-'}</td>
-              <td>{formatUsd(row.amount)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <SectionCard title="Commission Breakdown" subtitle="How each visible commission row was calculated.">
+        <CommissionBreakdownTable commissions={commissions} dealers={dealers} allocations={allocations} />
+      </SectionCard>
+
+      <SectionCard title="Commission Ledger" subtitle="Commission accruals and payment activity.">
+        {rows.length === 0 ? (
+          <EmptyState title="No commission or payment records yet." />
+        ) : (
+          <DataTable>
+            <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Date</th>
+                <th className="px-4 py-3">Type</th>
+                <th className="px-4 py-3">Details</th>
+                <th className="px-4 py-3 text-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, index) => {
+                const isPayment = row.amount < 0;
+                return (
+                  <tr
+                    key={row.commission?.id || row.payment?.id || `${row.date}-${index}`}
+                    className={isPayment ? 'border-t border-slate-100 bg-emerald-50/40' : 'border-t border-slate-100 transition hover:bg-slate-50'}
+                  >
+                    <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{row.date}</td>
+                    <td className="px-4 py-3 font-medium text-slate-950 whitespace-nowrap">{row.kind}</td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {row.commission ? getCommissionLedgerDetails(row.commission, dealers) : row.description || '-'}
+                    </td>
+                    <td className={isPayment ? 'px-4 py-3 text-right font-semibold text-emerald-700 whitespace-nowrap' : 'px-4 py-3 text-right font-semibold text-slate-950 whitespace-nowrap'}>
+                      {formatUsd(row.amount)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </DataTable>
+        )}
+      </SectionCard>
     </PageShell>
   );
 }
