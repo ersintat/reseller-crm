@@ -588,7 +588,19 @@ export function App() {
       })
       .catch((error) => {
         if (!active) return;
-        console.warn('Failed to sync Supabase employee commissions.', error);
+        console.warn('Failed to sync Supabase employee commissions.', {
+          error,
+          rowsAttempted: commissionsToSync.map((commission) => ({
+            employeeId: commission.employeeId,
+            dealerId: commission.dealerId,
+            statementId: commission.statementId,
+            period: `${commission.periodYear}-${String(commission.periodMonth).padStart(2, '0')}`,
+            commissionBase: commission.commissionBase,
+            commissionRate: commission.commissionRate,
+            commissionAmount: commission.commissionAmount,
+            status: commission.status,
+          })),
+        });
         setCommissionSyncStatus('failed');
         if (userTriggeredSync) {
           commissionSyncTriggeredByUserRef.current = false;
@@ -1174,7 +1186,27 @@ export function App() {
             : `${synced.length} commission row${synced.length === 1 ? '' : 's'} recalculated.`,
         );
       } catch (error) {
-        console.warn('Manual employee commission recalculation failed.', error);
+        console.error('Manual employee commission recalculation failed.', {
+          error,
+          employeeId: targetEmployee.id,
+          employeeSupabaseId: targetEmployee.supabaseId,
+          rowsAttempted: nextRows.map((commission) => ({
+            employeeId: commission.employeeId,
+            dealerId: commission.dealerId,
+            statementId: commission.statementId,
+            period: `${commission.periodYear}-${String(commission.periodMonth).padStart(2, '0')}`,
+            companyShareAmount: commission.companyShareAmount,
+            printingCosts: commission.printingCosts,
+            shippingCosts: commission.shippingCosts,
+            commissionBaseAdjustments: commission.commissionBaseAdjustments,
+            commissionBase: commission.commissionBase,
+            commissionRate: commission.commissionRate,
+            commissionAmount: commission.commissionAmount,
+            paidAmount: commission.paidAmount,
+            remainingAmount: commission.remainingAmount,
+            status: commission.status,
+          })),
+        });
         setCommissionSyncStatus('failed');
         setFlash('Commission recalculation could not be completed. Please refresh or try again.');
       }

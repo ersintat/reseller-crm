@@ -1029,6 +1029,16 @@ export async function recordDealerPaymentWithAllocations(
 const commissionSelect =
   'id,employee_id,dealer_id,statement_id,period_month,period_year,company_share_amount,printing_costs,shipping_costs,commission_base_adjustments,commission_base,commission_rate,commission_amount,paid_amount,remaining_amount,status,currency,created_at';
 
+const serializeSupabaseError = (error: unknown) => {
+  const maybe = error as { code?: string; message?: string; details?: string; hint?: string };
+  return {
+    code: maybe?.code,
+    message: maybe?.message,
+    details: maybe?.details,
+    hint: maybe?.hint,
+  };
+};
+
 export async function fetchEmployeeCommissions({
   employees,
   dealers,
@@ -1069,15 +1079,41 @@ export async function createOrUpdateEmployeeCommissions({
   const employeesById = new Map(employees.map((employee) => [employee.id, employee]));
   const dealersById = new Map(dealers.map((dealer) => [dealer.id, dealer]));
   const statementsById = new Map(statements.map((statement) => [statement.id, statement]));
+  const debugRows: {
+    employeeId: string;
+    employeeSupabaseId?: string;
+    dealerId: string;
+    dealerSupabaseId?: string;
+    statementId: string;
+    statementSupabaseId?: string;
+    period: string;
+    payload?: unknown;
+    skipped?: string;
+  }[] = [];
 
   const rows = commissions
     .map((commission) => {
       const employee = employeesById.get(commission.employeeId);
       const dealer = dealersById.get(commission.dealerId);
       const statement = statementsById.get(commission.statementId);
-      if (!employee || !dealer || !statement) return null;
+      const context = {
+        employeeId: commission.employeeId,
+        employeeSupabaseId: employee?.supabaseId,
+        dealerId: commission.dealerId,
+        dealerSupabaseId: dealer?.supabaseId,
+        statementId: commission.statementId,
+        statementSupabaseId: statement?.supabaseId,
+        period: `${commission.periodYear}-${String(commission.periodMonth).padStart(2, '0')}`,
+      };
+      if (!employee || !dealer || !statement) {
+        debugRows.push({
+          ...context,
+          skipped: !employee ? 'missing employee mapping' : !dealer ? 'missing dealer mapping' : 'missing statement mapping',
+        });
+        return null;
+      }
 
-      return {
+      const row = {
         employee_id: employee.supabaseId ?? employee.id,
         dealer_id: dealer.supabaseId ?? dealer.id,
         statement_id: statement.supabaseId ?? statement.id,
@@ -1095,17 +1131,49 @@ export async function createOrUpdateEmployeeCommissions({
         status: commission.status,
         currency: commission.currency ?? reportingCurrency,
       };
+      debugRows.push({ ...context, payload: row });
+      return row;
     })
     .filter((row): row is NonNullable<typeof row> => Boolean(row));
 
   if (rows.length === 0) return [];
+
+  const invalidRows = rows.filter((row) =>
+    [
+      row.period_month,
+      row.period_year,
+      row.company_share_amount,
+      row.printing_costs,
+      row.shipping_costs,
+      row.commission_base_adjustments,
+      row.commission_base,
+      row.commission_rate,
+      row.commission_amount,
+      row.paid_amount,
+      row.remaining_amount,
+    ].some((value) => !Number.isFinite(Number(value))),
+  );
+  if (invalidRows.length > 0) {
+    console.error('Invalid employee commission recalculation payload.', {
+      invalidRows,
+      debugRows,
+    });
+    throw new Error('Invalid employee commission recalculation payload.');
+  }
 
   const { data, error } = await supabase
     .from('employee_commissions')
     .upsert(rows, { onConflict: 'employee_id,statement_id' })
     .select(commissionSelect);
 
-  if (error) throw error;
+  if (error) {
+    console.error('Supabase employee commission upsert failed.', {
+      error: serializeSupabaseError(error),
+      rows,
+      debugRows,
+    });
+    throw error;
+  }
   return ((data ?? []) as EmployeeCommissionRow[]).map((row) =>
     mapEmployeeCommission(row, employees, dealers, statements),
   );
