@@ -284,20 +284,17 @@ function getZeroCommissionNote(commission: EmployeeCommission) {
   return 'Commission amount is zero.';
 }
 
+function isZeroCommissionRow(commission: EmployeeCommission) {
+  return Math.abs(commission.commissionAmount) < 0.001 && Math.abs(commission.remainingAmount) < 0.001;
+}
+
 function getCommissionLedgerDetails(commission: EmployeeCommission, dealers: Dealer[]) {
   const zeroNote = getZeroCommissionNote(commission);
   return (
     <div className="space-y-1">
-      <p className="font-medium text-slate-900">
-        {getCommissionDealerName(commission, dealers)} · {formatCommissionPeriod(commission)} · Base{' '}
-        {formatUsd(commission.commissionBase)} × {formatCommissionRate(commission.commissionRate)}
-      </p>
+      <p className="font-medium text-slate-900">{getCommissionDealerName(commission, dealers)}</p>
       <p className="text-xs text-slate-500">
-        Company share {formatUsd(commission.companyShareAmount)} · Printing {formatUsd(commission.printingCosts)} ·
-        Shipping {formatUsd(commission.shippingCosts)}
-        {commission.commissionBaseAdjustments !== 0
-          ? ` · Adjustments ${formatUsd(commission.commissionBaseAdjustments)}`
-          : ''}
+        Base {formatUsd(commission.commissionBase)} × {formatCommissionRate(commission.commissionRate)}
       </p>
       {zeroNote && <p className="text-xs font-medium text-amber-700">{zeroNote}</p>}
     </div>
@@ -308,70 +305,145 @@ function CommissionBreakdownTable({
   commissions,
   dealers,
   allocations,
+  showZeroRows,
+  onToggleZeroRows,
 }: {
   commissions: EmployeeCommission[];
   dealers: Dealer[];
   allocations: EmployeePaymentAllocation[];
+  showZeroRows: boolean;
+  onToggleZeroRows: () => void;
 }) {
-  const rows = [...commissions].sort((a, b) => {
+  const sortedCommissions = [...commissions].sort((a, b) => {
     const periodCompare = formatCommissionPeriod(a).localeCompare(formatCommissionPeriod(b));
     if (periodCompare !== 0) return periodCompare;
     return getCommissionDealerName(a, dealers).localeCompare(getCommissionDealerName(b, dealers));
   });
-
-  if (rows.length === 0) {
-    return <EmptyState title="No generated commission rows yet." />;
-  }
+  const hiddenZeroCount = sortedCommissions.filter(isZeroCommissionRow).length;
+  const rows = showZeroRows ? sortedCommissions : sortedCommissions.filter((commission) => !isZeroCommissionRow(commission));
+  const storeSummaries = Array.from(
+    sortedCommissions.reduce(
+      (map, commission) => {
+        const storeName = getCommissionDealerName(commission, dealers);
+        const paid = getEmployeeCommissionPaidAmount(commission.id, allocations);
+        const remaining = Math.max(commission.commissionAmount - paid, 0);
+        const summary = map.get(storeName) || { storeName, total: 0, paid: 0, open: 0 };
+        summary.total += commission.commissionAmount;
+        summary.paid += paid;
+        summary.open += remaining;
+        map.set(storeName, summary);
+        return map;
+      },
+      new Map<string, { storeName: string; total: number; paid: number; open: number }>(),
+    ).values(),
+  ).sort((a, b) => a.storeName.localeCompare(b.storeName));
 
   return (
-    <DataTable>
-      <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">
-        <tr>
-          <th className="px-4 py-3 whitespace-nowrap">Store</th>
-          <th className="px-4 py-3 whitespace-nowrap">Period</th>
-          <th className="px-4 py-3 text-right whitespace-nowrap">Company Share</th>
-          <th className="px-4 py-3 text-right whitespace-nowrap">Printing</th>
-          <th className="px-4 py-3 text-right whitespace-nowrap">Shipping</th>
-          <th className="px-4 py-3 text-right whitespace-nowrap">Adjustments</th>
-          <th className="px-4 py-3 text-right whitespace-nowrap">Commission Base</th>
-          <th className="px-4 py-3 text-right whitespace-nowrap">Rate</th>
-          <th className="px-4 py-3 text-right whitespace-nowrap">Commission</th>
-          <th className="px-4 py-3 text-right whitespace-nowrap">Paid</th>
-          <th className="px-4 py-3 text-right whitespace-nowrap">Remaining</th>
-          <th className="px-4 py-3 whitespace-nowrap">Status</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((commission) => {
-          const paid = getEmployeeCommissionPaidAmount(commission.id, allocations);
-          const remaining = Math.max(commission.commissionAmount - paid, 0);
-          const zeroNote = getZeroCommissionNote(commission);
-          return (
-            <tr key={commission.id} className="border-t border-slate-100 transition hover:bg-slate-50">
-              <td className="px-4 py-3 font-medium text-slate-950 whitespace-nowrap">
-                {getCommissionDealerName(commission, dealers)}
-              </td>
-              <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{formatCommissionPeriod(commission)}</td>
-              <td className="px-4 py-3 text-right text-slate-700 whitespace-nowrap">{formatUsd(commission.companyShareAmount)}</td>
-              <td className="px-4 py-3 text-right text-slate-700 whitespace-nowrap">{formatUsd(commission.printingCosts)}</td>
-              <td className="px-4 py-3 text-right text-slate-700 whitespace-nowrap">{formatUsd(commission.shippingCosts)}</td>
-              <td className="px-4 py-3 text-right text-slate-700 whitespace-nowrap">{formatUsd(commission.commissionBaseAdjustments)}</td>
-              <td className="px-4 py-3 text-right font-semibold text-slate-950 whitespace-nowrap">{formatUsd(commission.commissionBase)}</td>
-              <td className="px-4 py-3 text-right text-slate-700 whitespace-nowrap">{formatCommissionRate(commission.commissionRate)}</td>
-              <td className="px-4 py-3 text-right font-semibold text-slate-950 whitespace-nowrap">
-                {formatUsd(commission.commissionAmount)}
-                {zeroNote && <p className="mt-1 text-xs font-medium text-amber-700 whitespace-normal">{zeroNote}</p>}
-              </td>
-              <td className="px-4 py-3 text-right text-emerald-700 font-semibold whitespace-nowrap">{formatUsd(paid)}</td>
-              <td className="px-4 py-3 text-right font-semibold text-slate-950 whitespace-nowrap">{formatUsd(remaining)}</td>
-              <td className="px-4 py-3 whitespace-nowrap">
-                <StatusBadge status={commission.status} />
-              </td>
+    <div className="space-y-4 p-5">
+      {storeSummaries.length > 0 && (
+        <div className="grid gap-3 lg:grid-cols-3">
+          {storeSummaries.map((summary) => (
+            <div key={summary.storeName} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="text-sm font-semibold text-slate-950">{summary.storeName}</p>
+              <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                <div>
+                  <p className="uppercase tracking-wide text-slate-500">Total</p>
+                  <p className="mt-1 font-semibold text-slate-950">{formatUsd(summary.total)}</p>
+                </div>
+                <div>
+                  <p className="uppercase tracking-wide text-slate-500">Open</p>
+                  <p className="mt-1 font-semibold text-amber-700">{formatUsd(summary.open)}</p>
+                </div>
+                <div>
+                  <p className="uppercase tracking-wide text-slate-500">Paid</p>
+                  <p className="mt-1 font-semibold text-emerald-700">{formatUsd(summary.paid)}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-slate-600">
+          Zero commission rows are hidden by default to keep the ledger focused.
+          {hiddenZeroCount > 0 ? ` ${hiddenZeroCount} hidden.` : ''}
+        </p>
+        <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-700">
+          <input
+            type="checkbox"
+            className="h-4 w-4 rounded border-slate-300 text-indigoBrand focus:ring-indigoBrand"
+            checked={showZeroRows}
+            onChange={onToggleZeroRows}
+          />
+          Show zero commission rows
+        </label>
+      </div>
+
+      {rows.length === 0 ? (
+        <EmptyState
+          title={sortedCommissions.length === 0 ? 'No generated commission rows yet.' : 'Only zero commission rows are hidden.'}
+          description={sortedCommissions.length === 0 ? undefined : 'Enable the toggle to audit zero commission statements.'}
+        />
+      ) : (
+        <DataTable>
+          <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="px-4 py-3 whitespace-nowrap">Store</th>
+              <th className="px-4 py-3 whitespace-nowrap">Period</th>
+              <th className="px-4 py-3 text-right whitespace-nowrap">Company Share</th>
+              <th className="px-4 py-3 text-right whitespace-nowrap">Printing</th>
+              <th className="px-4 py-3 text-right whitespace-nowrap">Shipping</th>
+              <th className="px-4 py-3 text-right whitespace-nowrap">Adjustments</th>
+              <th className="px-4 py-3 text-right whitespace-nowrap">Commission Base</th>
+              <th className="px-4 py-3 text-right whitespace-nowrap">Rate</th>
+              <th className="px-4 py-3 text-right whitespace-nowrap">Commission</th>
+              <th className="px-4 py-3 text-right whitespace-nowrap">Paid</th>
+              <th className="px-4 py-3 text-right whitespace-nowrap">Remaining</th>
+              <th className="px-4 py-3 whitespace-nowrap">Status</th>
             </tr>
-          );
-        })}
-      </tbody>
-    </DataTable>
+          </thead>
+          <tbody>
+            {rows.map((commission) => {
+              const paid = getEmployeeCommissionPaidAmount(commission.id, allocations);
+              const remaining = Math.max(commission.commissionAmount - paid, 0);
+              const zeroNote = getZeroCommissionNote(commission);
+              const isZero = isZeroCommissionRow(commission);
+              return (
+                <tr
+                  key={commission.id}
+                  className={
+                    isZero
+                      ? 'border-t border-slate-100 bg-slate-50/70 text-slate-500'
+                      : 'border-t border-slate-100 transition hover:bg-slate-50'
+                  }
+                >
+                  <td className="px-4 py-3 font-medium text-slate-950 whitespace-nowrap">
+                    {getCommissionDealerName(commission, dealers)}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{formatCommissionPeriod(commission)}</td>
+                  <td className="px-4 py-3 text-right text-slate-700 whitespace-nowrap">{formatUsd(commission.companyShareAmount)}</td>
+                  <td className="px-4 py-3 text-right text-slate-700 whitespace-nowrap">{formatUsd(commission.printingCosts)}</td>
+                  <td className="px-4 py-3 text-right text-slate-700 whitespace-nowrap">{formatUsd(commission.shippingCosts)}</td>
+                  <td className="px-4 py-3 text-right text-slate-700 whitespace-nowrap">{formatUsd(commission.commissionBaseAdjustments)}</td>
+                  <td className="px-4 py-3 text-right font-semibold text-slate-950 whitespace-nowrap">{formatUsd(commission.commissionBase)}</td>
+                  <td className="px-4 py-3 text-right text-slate-700 whitespace-nowrap">{formatCommissionRate(commission.commissionRate)}</td>
+                  <td className="px-4 py-3 text-right font-semibold text-slate-950 whitespace-nowrap">
+                    {formatUsd(commission.commissionAmount)}
+                    {zeroNote && <p className="mt-1 text-xs font-medium text-amber-700 whitespace-normal">{zeroNote}</p>}
+                  </td>
+                  <td className="px-4 py-3 text-right text-emerald-700 font-semibold whitespace-nowrap">{formatUsd(paid)}</td>
+                  <td className="px-4 py-3 text-right font-semibold text-slate-950 whitespace-nowrap">{formatUsd(remaining)}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <StatusBadge status={commission.status} />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </DataTable>
+      )}
+    </div>
   );
 }
 
@@ -3086,6 +3158,7 @@ export function EmployeeProfilePage({
     mode: 'fifo' as 'fifo' | 'manual',
   });
   const [manual, setManual] = useState<Record<string, string>>({});
+  const [showZeroCommissionRows, setShowZeroCommissionRows] = useState(false);
   const employeePaymentRate = useExchangeRateAutofill({
     currency: form.currency,
     date: form.paymentDate,
@@ -3099,6 +3172,9 @@ export function EmployeeProfilePage({
   const employeeCommissions = commissions.filter((commission) => commission.employeeId === employee.id);
   const openCommissions = getOpenCommissionsForEmployee(employee.id, commissions, allocations);
   const rows = getEmployeeCommissionLedgerRows(employee.id, commissions, payments);
+  const ledgerRows = rows.filter(
+    (row) => !row.commission || showZeroCommissionRows || !isZeroCommissionRow(row.commission),
+  );
   const paymentUsdPreview = calculateUsdPreview(form.amount, form.currency, form.exchangeRateToUsd);
   let running = 0;
 
@@ -3364,13 +3440,19 @@ export function EmployeeProfilePage({
 
       <SectionCard
         title="Commission Breakdown"
-        subtitle="Store-level commission math for each generated statement row."
+        subtitle="Detailed commission rows are calculated from each statement's company share minus costs, multiplied by the assigned store rate."
       >
-        <CommissionBreakdownTable commissions={employeeCommissions} dealers={dealers} allocations={allocations} />
+        <CommissionBreakdownTable
+          commissions={employeeCommissions}
+          dealers={dealers}
+          allocations={allocations}
+          showZeroRows={showZeroCommissionRows}
+          onToggleZeroRows={() => setShowZeroCommissionRows((value) => !value)}
+        />
       </SectionCard>
 
       <SectionCard title="Commission Ledger" subtitle="Commission accruals and employee payment activity.">
-        {rows.length === 0 ? (
+        {ledgerRows.length === 0 ? (
           <EmptyState title="No commission or payment records yet." />
         ) : (
           <DataTable>
@@ -3384,7 +3466,7 @@ export function EmployeeProfilePage({
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, index) => {
+              {ledgerRows.map((row, index) => {
                 running += row.amount;
                 const isPayment = row.amount < 0;
                 return (
@@ -3950,11 +4032,16 @@ export function MyCommissionsPage({
   payments: EmployeePayment[];
   allocations: EmployeePaymentAllocation[];
 }) {
+  const [showZeroCommissionRows, setShowZeroCommissionRows] = useState(false);
+
   if (role !== 'employee') {
     return <PageShell title="My Commissions" subtitle="Switch to employee role to view this page" />;
   }
 
   const rows = getEmployeeCommissionLedgerRows(employee.id, commissions, payments);
+  const ledgerRows = rows.filter(
+    (row) => !row.commission || showZeroCommissionRows || !isZeroCommissionRow(row.commission),
+  );
 
   return (
     <PageShell title="My Commissions" subtitle="Your commission ledger">
@@ -3968,12 +4055,21 @@ export function MyCommissionsPage({
           value={formatUsd(getCurrentMonthEmployeeCommission(employee.id, commissions))}
         />
       </div>
-      <SectionCard title="Commission Breakdown" subtitle="How each visible commission row was calculated.">
-        <CommissionBreakdownTable commissions={commissions} dealers={dealers} allocations={allocations} />
+      <SectionCard
+        title="Commission Breakdown"
+        subtitle="Detailed commission rows are calculated from each statement's company share minus costs, multiplied by the assigned store rate."
+      >
+        <CommissionBreakdownTable
+          commissions={commissions}
+          dealers={dealers}
+          allocations={allocations}
+          showZeroRows={showZeroCommissionRows}
+          onToggleZeroRows={() => setShowZeroCommissionRows((value) => !value)}
+        />
       </SectionCard>
 
       <SectionCard title="Commission Ledger" subtitle="Commission accruals and payment activity.">
-        {rows.length === 0 ? (
+        {ledgerRows.length === 0 ? (
           <EmptyState title="No commission or payment records yet." />
         ) : (
           <DataTable>
@@ -3986,7 +4082,7 @@ export function MyCommissionsPage({
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, index) => {
+              {ledgerRows.map((row, index) => {
                 const isPayment = row.amount < 0;
                 return (
                   <tr
