@@ -1872,6 +1872,7 @@ export function StatementDetailPage({
     adjustmentScope: 'shareable_net' as ManualAdjustmentScope,
     adjustmentDirection: 'increase' as ManualAdjustmentDirection,
   });
+  const [transactionSaving, setTransactionSaving] = useState(false);
   const transactionRate = useExchangeRateAutofill({
     currency: form.currency,
     date: form.date,
@@ -1902,7 +1903,8 @@ export function StatementDetailPage({
   const statementPendingOrderCosts = pendingOrderCosts.filter(
     (cost) => cost.statementId === statement.id || (!cost.statementId && cost.dealerId === dealer.id),
   );
-  const addTransaction = () => {
+  const addTransaction = async () => {
+    if (transactionSaving) return;
     const originalAmount = parsePositiveNumber(form.amount);
     const exchangeRateToUsd = getExchangeRateForSave(form.currency, form.exchangeRateToUsd);
     if (!form.date || !form.type || !originalAmount) {
@@ -1914,6 +1916,20 @@ export function StatementDetailPage({
       return;
     }
     const usdAmount = roundUsdAmount(originalAmount * exchangeRateToUsd);
+    const orderCode = form.orderCode.trim();
+    const exactDuplicate = orderCode
+      ? txns.some(
+          (transaction) =>
+            transaction.type === form.type &&
+            transaction.orderCode === orderCode &&
+            (transaction.originalCurrency ?? 'USD') === form.currency &&
+            Math.abs((transaction.usdAmount ?? transaction.amount) - usdAmount) < 0.001,
+        )
+      : false;
+    if (exactDuplicate) {
+      setFlash('A similar transaction already exists for this statement.');
+      return;
+    }
 
     const input = {
       date: form.date,
@@ -1924,41 +1940,48 @@ export function StatementDetailPage({
       exchangeRateToUsd,
       usdAmount,
       description: form.description,
-      orderCode: form.orderCode || undefined,
+      orderCode: orderCode || undefined,
       adjustmentScope: form.type === 'manual_adjustment' ? form.adjustmentScope : undefined,
       adjustmentDirection: form.type === 'manual_adjustment' ? form.adjustmentDirection : undefined,
     };
 
-    if (onCreateTransaction) {
-      void onCreateTransaction(statement, dealer, input);
-      setForm((previous) => ({ ...previous, amount: '', description: '', orderCode: '' }));
-      return;
-    }
+    setTransactionSaving(true);
+    try {
+      if (onCreateTransaction) {
+        await onCreateTransaction(statement, dealer, input);
+        setForm((previous) => ({ ...previous, amount: '', description: '', orderCode: '' }));
+        return;
+      }
 
-    const status: TransactionStatus = role === 'admin' || employeeCreatesConfirmed ? 'confirmed' : 'pending_review';
-    setTransactions((previous) => [
-      ...previous,
-      {
-        id: `t-${Date.now()}`,
-        dealerId: dealer.id,
-        statementId: statement.id,
-        date: input.date,
-        type: input.type,
-        amount: usdAmount,
-        originalAmount,
-        originalCurrency: form.currency,
-        exchangeRateToUsd,
-        usdAmount,
-        status,
-        description: input.description,
-        orderCode: input.orderCode,
-        adjustmentScope: input.adjustmentScope,
-        adjustmentDirection: input.adjustmentDirection,
-        createdByRole: role,
-      },
-    ]);
-    setFlash(status === 'confirmed' ? 'Transaction added and confirmed.' : 'Transaction submitted for admin review.');
-    setForm((previous) => ({ ...previous, amount: '', description: '', orderCode: '' }));
+      const status: TransactionStatus = role === 'admin' || employeeCreatesConfirmed ? 'confirmed' : 'pending_review';
+      setTransactions((previous) => [
+        ...previous,
+        {
+          id: `t-${Date.now()}`,
+          dealerId: dealer.id,
+          statementId: statement.id,
+          date: input.date,
+          type: input.type,
+          amount: usdAmount,
+          originalAmount,
+          originalCurrency: form.currency,
+          exchangeRateToUsd,
+          usdAmount,
+          status,
+          description: input.description,
+          orderCode: input.orderCode,
+          adjustmentScope: input.adjustmentScope,
+          adjustmentDirection: input.adjustmentDirection,
+          createdByRole: role,
+        },
+      ]);
+      setFlash(status === 'confirmed' ? 'Transaction added and confirmed.' : 'Transaction submitted for admin review.');
+      setForm((previous) => ({ ...previous, amount: '', description: '', orderCode: '' }));
+    } catch {
+      // The caller sets the user-facing error message. Keep the form values for retry.
+    } finally {
+      setTransactionSaving(false);
+    }
   };
 
   const openTransactionEditor = (transaction: SettlementTransaction) => {
@@ -2225,8 +2248,8 @@ export function StatementDetailPage({
               </InfoCallout>
             </div>
             <ExchangeRateLookupStatus lookup={transactionRate.lookup} />
-            <Button variant="primary" onClick={addTransaction}>
-              Add Transaction
+            <Button variant="primary" onClick={() => void addTransaction()} disabled={transactionSaving}>
+              {transactionSaving ? 'Saving...' : 'Add Transaction'}
             </Button>
           </div>
         </SectionCard>
@@ -2501,6 +2524,7 @@ export function TransactionsPage({
 }: TransactionsPageProps) {
   const [filters, setFilters] = useState({ dealerId: '', type: '', status: '', q: '' });
   const [selectedPendingIds, setSelectedPendingIds] = useState<Set<string>>(() => new Set());
+  const [showPendingInLedger, setShowPendingInLedger] = useState(false);
   const visibleDealers = role === 'admin' ? dealers : dealers.filter((dealer) => assignedStoreIds.includes(dealer.storeId));
   const visibleIds = useMemo(() => new Set(visibleDealers.map((dealer) => dealer.id)), [visibleDealers]);
   const rows = useMemo(
@@ -2558,6 +2582,9 @@ export function TransactionsPage({
     setFlash('Transaction deleted.');
   };
   const pendingRows = rows.filter((transaction) => transaction.status === 'pending_review');
+  const ledgerRows = showPendingInLedger
+    ? rows
+    : rows.filter((transaction) => transaction.status !== 'pending_review');
   const selectedVisiblePendingRows = pendingRows.filter((transaction) => selectedPendingIds.has(transaction.id));
   const allVisiblePendingSelected =
     pendingRows.length > 0 && pendingRows.every((transaction) => selectedPendingIds.has(transaction.id));
@@ -2752,8 +2779,28 @@ export function TransactionsPage({
         )}
       </SectionCard>
 
-      <SectionCard title="Transaction Ledger" subtitle="All visible transactions matching the current filters.">
-        {rows.length === 0 ? (
+      <SectionCard
+        title="Transaction Ledger"
+        subtitle={
+          showPendingInLedger
+            ? 'All visible transactions matching the current filters.'
+            : 'Pending transactions are shown above in Approval Queue.'
+        }
+        action={
+          role === 'admin' ? (
+            <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-slate-300 text-indigoBrand"
+                checked={showPendingInLedger}
+                onChange={(event) => setShowPendingInLedger(event.target.checked)}
+              />
+              Show pending in ledger
+            </label>
+          ) : undefined
+        }
+      >
+        {ledgerRows.length === 0 ? (
           <EmptyState title="No transactions match the current filters." />
         ) : (
           <DataTable>
@@ -2771,7 +2818,7 @@ export function TransactionsPage({
               </tr>
             </thead>
             <tbody>
-              {rows.map((transaction) => (
+              {ledgerRows.map((transaction) => (
                 <tr
                   key={transaction.id}
                   className={`border-t border-slate-100 ${

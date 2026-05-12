@@ -133,11 +133,13 @@ export function Button({
   variant = 'secondary',
   onClick,
   type = 'button',
+  disabled = false,
 }: {
   children: ReactNode;
   variant?: 'primary' | 'secondary' | 'danger';
   onClick?: () => void;
   type?: 'button' | 'submit';
+  disabled?: boolean;
 }) {
   const variantClass = {
     primary: 'bg-indigoBrand text-white border-indigoBrand shadow-sm hover:bg-indigo-900',
@@ -147,7 +149,8 @@ export function Button({
 
   return (
     <button
-      className={`inline-flex h-9 items-center justify-center rounded-lg border px-3.5 text-sm font-medium transition ${variantClass}`}
+      className={`inline-flex h-9 items-center justify-center rounded-lg border px-3.5 text-sm font-medium transition ${variantClass} disabled:cursor-not-allowed disabled:opacity-60`}
+      disabled={disabled}
       onClick={onClick}
       type={type}
     >

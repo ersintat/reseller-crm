@@ -787,6 +787,7 @@ export function App() {
       setFlash(status === 'confirmed' ? 'Transaction added and confirmed in Supabase.' : 'Transaction submitted for admin review.');
     } catch (error) {
       setFlash(friendlySupabaseError(error, 'Transaction could not be created'));
+      throw error;
     }
   };
 
