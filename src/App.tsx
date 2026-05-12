@@ -59,6 +59,15 @@ const initialEmployeeCommissions = generateEmployeeCommissionsForStatements(
   initialTransactions,
 );
 
+const EMPTY_STATEMENTS: Statement[] = [];
+const EMPTY_TRANSACTIONS: SettlementTransaction[] = [];
+const EMPTY_DEALER_PAYMENTS: DealerPayment[] = [];
+const EMPTY_DEALER_PAYMENT_ALLOCATIONS: DealerPaymentAllocation[] = [];
+const EMPTY_EMPLOYEE_COMMISSIONS: EmployeeCommission[] = [];
+const EMPTY_EMPLOYEE_PAYMENTS: EmployeePayment[] = [];
+const EMPTY_EMPLOYEE_PAYMENT_ALLOCATIONS: EmployeePaymentAllocation[] = [];
+const EMPTY_PENDING_ORDER_COSTS: PendingOrderCost[] = [];
+
 const normalizeAssignment = (assignment: Assignment): Assignment => ({
   storeId: assignment.storeId,
   dealerId: assignment.dealerId,
@@ -282,10 +291,7 @@ export function App() {
       .catch((error) => {
         if (!active) return;
         console.warn('Failed to load Supabase statements and transactions.', error);
-        setSupabaseStatements(null);
-        setSupabaseTransactions(null);
-        setSupabasePendingOrderCosts(null);
-        setActivityError('Supabase statements and transactions could not be loaded. The app is using local settlement activity.');
+        setActivityError('Supabase statements and transactions could not be loaded. Keeping any previously loaded Supabase settlement activity.');
       })
       .finally(() => {
         if (active) setActivityLoading(false);
@@ -299,8 +305,7 @@ export function App() {
   const usingSupabaseActivityData = Boolean(
     usingSupabaseReferenceData &&
       supabaseStatements &&
-      supabaseTransactions &&
-      !activityError,
+      supabaseTransactions,
   );
   useEffect(() => {
     if (!usingSupabaseActivityData) {
@@ -327,8 +332,6 @@ export function App() {
       .catch((error) => {
         if (!active) return;
         console.warn('Failed to load Supabase dealer payments.', error);
-        setSupabaseDealerPayments([]);
-        setSupabaseDealerPaymentAllocations([]);
         setDealerPaymentError('Supabase dealer payments could not be loaded. Dealer payment rows are unavailable until Supabase responds.');
       })
       .finally(() => {
@@ -341,12 +344,16 @@ export function App() {
   }, [activeDealers, supabaseStatements, usingSupabaseActivityData]);
 
   const usingSupabaseDealerPaymentData = usingSupabaseActivityData;
-  const activeStatements = usingSupabaseActivityData ? supabaseStatements! : statements;
-  const activeTransactions = usingSupabaseActivityData ? supabaseTransactions! : transactions;
-  const activePendingOrderCosts = usingSupabaseActivityData ? supabasePendingOrderCosts ?? [] : pendingOrderCosts;
-  const activeDealerPayments = usingSupabaseDealerPaymentData ? supabaseDealerPayments ?? [] : dealerPayments;
-  const activeDealerPaymentAllocations = usingSupabaseDealerPaymentData
-    ? supabaseDealerPaymentAllocations ?? []
+  const activeStatements = usingSupabaseReferenceData ? supabaseStatements ?? EMPTY_STATEMENTS : statements;
+  const activeTransactions = usingSupabaseReferenceData ? supabaseTransactions ?? EMPTY_TRANSACTIONS : transactions;
+  const activePendingOrderCosts = usingSupabaseReferenceData
+    ? supabasePendingOrderCosts ?? EMPTY_PENDING_ORDER_COSTS
+    : pendingOrderCosts;
+  const activeDealerPayments = usingSupabaseReferenceData
+    ? supabaseDealerPayments ?? EMPTY_DEALER_PAYMENTS
+    : dealerPayments;
+  const activeDealerPaymentAllocations = usingSupabaseReferenceData
+    ? supabaseDealerPaymentAllocations ?? EMPTY_DEALER_PAYMENT_ALLOCATIONS
     : dealerPaymentAllocations;
   const employeesWithAssignments = useMemo(
     () => hydrateEmployeesWithAssignments(baseEmployees, activeAssignmentState),
@@ -389,9 +396,6 @@ export function App() {
       .catch((error) => {
         if (!active) return;
         console.warn('Failed to load Supabase employee settlements.', error);
-        setSupabaseEmployeeCommissions([]);
-        setSupabaseEmployeePayments([]);
-        setSupabaseEmployeePaymentAllocations([]);
         setCommissionSyncStatus('failed');
       })
       .finally(() => {
@@ -405,12 +409,20 @@ export function App() {
 
   const usingSupabaseEmployeeSettlementData = usingSupabaseDealerPaymentData;
   const activeEmployeeCommissions = usingSupabaseEmployeeSettlementData
-    ? supabaseEmployeeCommissions ?? []
-    : employeeCommissions;
-  const activeEmployeePayments = usingSupabaseEmployeeSettlementData ? supabaseEmployeePayments ?? [] : employeePayments;
+    ? supabaseEmployeeCommissions ?? EMPTY_EMPLOYEE_COMMISSIONS
+    : usingSupabaseReferenceData
+      ? EMPTY_EMPLOYEE_COMMISSIONS
+      : employeeCommissions;
+  const activeEmployeePayments = usingSupabaseEmployeeSettlementData
+    ? supabaseEmployeePayments ?? EMPTY_EMPLOYEE_PAYMENTS
+    : usingSupabaseReferenceData
+      ? EMPTY_EMPLOYEE_PAYMENTS
+      : employeePayments;
   const activeEmployeePaymentAllocations = usingSupabaseEmployeeSettlementData
-    ? supabaseEmployeePaymentAllocations ?? []
-    : employeePaymentAllocations;
+    ? supabaseEmployeePaymentAllocations ?? EMPTY_EMPLOYEE_PAYMENT_ALLOCATIONS
+    : usingSupabaseReferenceData
+      ? EMPTY_EMPLOYEE_PAYMENT_ALLOCATIONS
+      : employeePaymentAllocations;
   const employee =
     employeesWithAssignments[0] ??
     (usingSupabaseReferenceData
@@ -1346,7 +1358,7 @@ export function App() {
   const dataModeLabel = usingSupabaseReferenceData
     ? usingSupabaseActivityData
       ? 'Supabase settlement, commissions & assignments'
-      : 'Supabase reference data · Local settlement activity'
+      : 'Supabase reference data · Loading settlement activity'
     : auth.authEnabled
       ? 'Mock reference data · Local settlement activity'
       : 'Demo mode · Local settlement activity';
