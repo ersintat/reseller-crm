@@ -64,6 +64,7 @@ import {
   type SupportedCurrency,
 } from '../lib/displayLabels';
 import { fetchExchangeRateToUsd } from '../lib/exchangeRateService';
+import { downloadStatementPdf } from '../lib/statementPdf';
 
 const transactionTypes: TransactionType[] = [
   'bank_payout',
@@ -391,10 +392,6 @@ function CommissionBreakdownTable({
             <tr>
               <th className="px-4 py-3 whitespace-nowrap">Store</th>
               <th className="px-4 py-3 whitespace-nowrap">Period</th>
-              <th className="px-4 py-3 text-right whitespace-nowrap">Company Share</th>
-              <th className="px-4 py-3 text-right whitespace-nowrap">Printing</th>
-              <th className="px-4 py-3 text-right whitespace-nowrap">Shipping</th>
-              <th className="px-4 py-3 text-right whitespace-nowrap">Adjustments</th>
               <th className="px-4 py-3 text-right whitespace-nowrap">Commission Base</th>
               <th className="px-4 py-3 text-right whitespace-nowrap">Rate</th>
               <th className="px-4 py-3 text-right whitespace-nowrap">Commission</th>
@@ -422,11 +419,16 @@ function CommissionBreakdownTable({
                     {getCommissionDealerName(commission, dealers)}
                   </td>
                   <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{formatCommissionPeriod(commission)}</td>
-                  <td className="px-4 py-3 text-right text-slate-700 whitespace-nowrap">{formatUsd(commission.companyShareAmount)}</td>
-                  <td className="px-4 py-3 text-right text-slate-700 whitespace-nowrap">{formatUsd(commission.printingCosts)}</td>
-                  <td className="px-4 py-3 text-right text-slate-700 whitespace-nowrap">{formatUsd(commission.shippingCosts)}</td>
-                  <td className="px-4 py-3 text-right text-slate-700 whitespace-nowrap">{formatUsd(commission.commissionBaseAdjustments)}</td>
-                  <td className="px-4 py-3 text-right font-semibold text-slate-950 whitespace-nowrap">{formatUsd(commission.commissionBase)}</td>
+                  <td className="px-4 py-3 text-right font-semibold text-slate-950 whitespace-nowrap">
+                    {formatUsd(commission.commissionBase)}
+                    <p className="mt-1 text-xs font-normal leading-5 text-slate-500 whitespace-normal">
+                      Company {formatUsd(commission.companyShareAmount)} · Printing {formatUsd(commission.printingCosts)} ·
+                      Shipping {formatUsd(commission.shippingCosts)}
+                      {commission.commissionBaseAdjustments !== 0
+                        ? ` · Adj ${formatUsd(commission.commissionBaseAdjustments)}`
+                        : ''}
+                    </p>
+                  </td>
                   <td className="px-4 py-3 text-right text-slate-700 whitespace-nowrap">{formatCommissionRate(commission.commissionRate)}</td>
                   <td className="px-4 py-3 text-right font-semibold text-slate-950 whitespace-nowrap">
                     {formatUsd(commission.commissionAmount)}
@@ -1762,12 +1764,9 @@ export function DealerProfilePage({
                 <th className="w-28 whitespace-nowrap px-4 py-3">Month</th>
                 <th className="w-36 whitespace-nowrap px-4 py-3">Status</th>
                 <th className="w-36 whitespace-nowrap px-4 py-3 text-right">Platform Payout</th>
-                <th className="w-32 whitespace-nowrap px-4 py-3 text-right">Dealer Share</th>
-                <th className="w-36 whitespace-nowrap px-4 py-3 text-right">Company Share</th>
                 <th className="w-40 whitespace-nowrap px-4 py-3 text-right">Dealer Receivable</th>
-                <th className="w-28 whitespace-nowrap px-4 py-3 text-right">Paid</th>
                 <th className="w-32 whitespace-nowrap px-4 py-3 text-right">Remaining</th>
-                <th className="w-44 whitespace-nowrap px-4 py-3 text-right">Actions</th>
+                <th className="w-52 whitespace-nowrap px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -1785,10 +1784,7 @@ export function DealerProfilePage({
                     <StatusBadge status={statement.status} />
                   </td>
                   <td className="whitespace-nowrap px-4 py-3.5 text-right tabular-nums">{formatUsd(totals.total_bank_payouts)}</td>
-                  <td className="whitespace-nowrap px-4 py-3.5 text-right tabular-nums">{formatUsd(totals.dealer_share_amount)}</td>
-                  <td className="whitespace-nowrap px-4 py-3.5 text-right tabular-nums">{formatUsd(totals.company_share_amount)}</td>
                   <td className="whitespace-nowrap px-4 py-3.5 text-right font-semibold tabular-nums text-slate-950">{formatUsd(totals.dealer_receivable_amount)}</td>
-                  <td className="whitespace-nowrap px-4 py-3.5 text-right tabular-nums text-emerald-700">{formatUsd(totals.paid_amount)}</td>
                   <td className="whitespace-nowrap px-4 py-3.5 text-right font-semibold tabular-nums text-slate-950">{formatUsd(totals.remaining_amount)}</td>
                   <td className="whitespace-nowrap px-4 py-3.5 text-right">
                     <div className="inline-flex items-center justify-end gap-1.5">
@@ -1802,6 +1798,21 @@ export function DealerProfilePage({
                       )}
                       {role === 'admin' && (
                         <>
+                          <button
+                            className="whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                            onClick={() =>
+                              downloadStatementPdf({
+                                dealer,
+                                statement,
+                                transactions,
+                                payments,
+                                allocations,
+                                pendingOrderCosts: dealerPendingOrderCosts,
+                              })
+                            }
+                          >
+                            PDF
+                          </button>
                           <button
                             className="whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-semibold text-indigoBrand hover:bg-indigo-50"
                             onClick={() => {
@@ -1976,6 +1987,7 @@ interface StatementDetailPageProps {
   transactions: SettlementTransaction[];
   setTransactions: Dispatch<SetStateAction<SettlementTransaction[]>>;
   setFlash: (value: string) => void;
+  payments: DealerPayment[];
   allocations: DealerPaymentAllocation[];
   employees: Employee[];
   pendingOrderCosts: PendingOrderCost[];
@@ -2021,6 +2033,7 @@ export function StatementDetailPage({
   transactions,
   setTransactions,
   setFlash,
+  payments,
   allocations,
   employees,
   pendingOrderCosts,
@@ -2256,17 +2269,33 @@ export function StatementDetailPage({
       {role === 'admin' && (
         <SectionCard
           title="Statement Actions"
-          subtitle="Delete is blocked when dealer payments or paid employee commissions are linked."
+          subtitle="Download a dealer-ready statement or remove statements created by mistake."
           action={
-            <Button
-              variant="danger"
-              onClick={async () => {
-                const deleted = await onDeleteStatement?.(statement);
-                if (deleted) navigate(`/dealers/${dealer.id}`);
-              }}
-            >
-              Delete Statement
-            </Button>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button
+                onClick={() =>
+                  downloadStatementPdf({
+                    dealer,
+                    statement,
+                    transactions,
+                    payments,
+                    allocations,
+                    pendingOrderCosts: statementPendingOrderCosts,
+                  })
+                }
+              >
+                Download Statement PDF
+              </Button>
+              <Button
+                variant="danger"
+                onClick={async () => {
+                  const deleted = await onDeleteStatement?.(statement);
+                  if (deleted) navigate(`/dealers/${dealer.id}`);
+                }}
+              >
+                Delete Statement
+              </Button>
+            </div>
           }
         >
           <div className="p-5 text-sm text-slate-600">
@@ -2446,16 +2475,13 @@ export function StatementDetailPage({
         <DataTable>
           <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="px-4 py-3">Date</th>
-              <th className="px-4 py-3">Type</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3 text-right">Original</th>
-              <th className="px-4 py-3 text-right">Rate</th>
-              <th className="px-4 py-3 text-right">USD Amount</th>
-              <th className="px-4 py-3">Order</th>
-              <th className="px-4 py-3">Description</th>
+              <th className="w-28 whitespace-nowrap px-4 py-3">Date</th>
+              <th className="w-48 whitespace-nowrap px-4 py-3">Type</th>
+              <th className="w-36 whitespace-nowrap px-4 py-3">Status</th>
+              <th className="w-48 whitespace-nowrap px-4 py-3 text-right">Amount</th>
+              <th className="min-w-64 px-4 py-3">Order / Description</th>
               {(role === 'admin' || editTransactionStoreIds.includes(dealer.storeId) || deleteTransactionStoreIds.includes(dealer.storeId)) && (
-                <th className="px-4 py-3 text-right">Actions</th>
+                <th className="w-36 whitespace-nowrap px-4 py-3 text-right">Actions</th>
               )}
             </tr>
           </thead>
@@ -2471,18 +2497,23 @@ export function StatementDetailPage({
                       : 'bg-amber-50/70 text-amber-900'
                 }`}
               >
-                <td className="px-4 py-3">{transaction.date}</td>
-                <td className="px-4 py-3 font-medium">{formatTransactionType(transaction.type)}</td>
-                <td className="px-4 py-3">
+                <td className="whitespace-nowrap px-4 py-3">{transaction.date}</td>
+                <td className="whitespace-nowrap px-4 py-3 font-medium">{formatTransactionType(transaction.type)}</td>
+                <td className="whitespace-nowrap px-4 py-3">
                   <StatusBadge status={transaction.status} />
                 </td>
-                <td className="px-4 py-3 text-right font-semibold">{formatOriginalMoney(transaction)}</td>
-                <td className="px-4 py-3 text-right">{formatExchangeRate(transaction.exchangeRateToUsd)}</td>
-                <td className="px-4 py-3 text-right font-semibold">{formatUsd(transaction.usdAmount ?? transaction.amount)}</td>
-                <td className="px-4 py-3">{transaction.orderCode || '-'}</td>
-                <td className="px-4 py-3">{transaction.description || '-'}</td>
+                <td className="whitespace-nowrap px-4 py-3 text-right">
+                  <p className="font-semibold text-slate-950">{formatUsd(transaction.usdAmount ?? transaction.amount)}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {formatOriginalMoney(transaction)} @ {formatExchangeRate(transaction.exchangeRateToUsd)}
+                  </p>
+                </td>
+                <td className="px-4 py-3">
+                  <p className="font-medium text-slate-900">{transaction.orderCode || '-'}</p>
+                  <p className="mt-1 text-xs text-slate-500">{transaction.description || '-'}</p>
+                </td>
                 {(role === 'admin' || canEditTransaction(transaction) || canDeleteTransaction(transaction)) && (
-                  <td className="px-4 py-3 text-right">
+                  <td className="whitespace-nowrap px-4 py-3 text-right">
                     <div className="flex justify-end gap-2">
                       {canEditTransaction(transaction) && (
                         <Button onClick={() => openTransactionEditor(transaction)}>
@@ -2920,9 +2951,7 @@ export function TransactionsPage({
                 <th className="px-4 py-3">Date</th>
                 <th className="px-4 py-3">Dealer</th>
                 <th className="px-4 py-3">Type</th>
-                <th className="px-4 py-3 text-right">Original</th>
-                <th className="px-4 py-3 text-right">Rate</th>
-                <th className="px-4 py-3 text-right">USD Amount</th>
+                <th className="px-4 py-3 text-right">Amount</th>
                 <th className="px-4 py-3">Submitted By</th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
@@ -2939,14 +2968,17 @@ export function TransactionsPage({
                       onChange={() => togglePendingSelection(transaction.id)}
                     />
                   </td>
-                  <td className="px-4 py-3">{transaction.date}</td>
+                  <td className="whitespace-nowrap px-4 py-3">{transaction.date}</td>
                   <td className="px-4 py-3 font-medium text-slate-950">{dealers.find((dealer) => dealer.id === transaction.dealerId)?.name}</td>
-                  <td className="px-4 py-3">{formatTransactionType(transaction.type)}</td>
-                  <td className="px-4 py-3 text-right font-semibold">{formatOriginalMoney(transaction)}</td>
-                  <td className="px-4 py-3 text-right">{formatExchangeRate(transaction.exchangeRateToUsd)}</td>
-                  <td className="px-4 py-3 text-right font-semibold">{formatUsd(transaction.usdAmount ?? transaction.amount)}</td>
-                  <td className="px-4 py-3">{transaction.createdByRole || 'admin'}</td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="whitespace-nowrap px-4 py-3">{formatTransactionType(transaction.type)}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right">
+                    <p className="font-semibold text-slate-950">{formatUsd(transaction.usdAmount ?? transaction.amount)}</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {formatOriginalMoney(transaction)} @ {formatExchangeRate(transaction.exchangeRateToUsd)}
+                    </p>
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3">{transaction.createdByRole || 'admin'}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right">
                     <div className="flex justify-end gap-2">
                       <Button variant="primary" onClick={() => updateStatus(transaction.id, 'confirmed')}>
                         Approve
@@ -2997,9 +3029,7 @@ export function TransactionsPage({
                 <th className="px-4 py-3">Dealer</th>
                 <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Original</th>
-                <th className="px-4 py-3 text-right">Rate</th>
-                <th className="px-4 py-3 text-right">USD Amount</th>
+                <th className="px-4 py-3 text-right">Amount</th>
                 <th className="px-4 py-3">Order</th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
@@ -3032,15 +3062,18 @@ export function TransactionsPage({
                     </td>
                   )}
                   <td className="px-4 py-3 font-medium text-slate-950">{dealers.find((dealer) => dealer.id === transaction.dealerId)?.name}</td>
-                  <td className="px-4 py-3">{formatTransactionType(transaction.type)}</td>
-                  <td className="px-4 py-3">
+                  <td className="whitespace-nowrap px-4 py-3">{formatTransactionType(transaction.type)}</td>
+                  <td className="whitespace-nowrap px-4 py-3">
                     <StatusBadge status={transaction.status} />
                   </td>
-                  <td className="px-4 py-3 text-right font-semibold">{formatOriginalMoney(transaction)}</td>
-                  <td className="px-4 py-3 text-right">{formatExchangeRate(transaction.exchangeRateToUsd)}</td>
-                  <td className="px-4 py-3 text-right font-semibold">{formatUsd(transaction.usdAmount ?? transaction.amount)}</td>
-                  <td className="px-4 py-3">{transaction.orderCode || '-'}</td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="whitespace-nowrap px-4 py-3 text-right">
+                    <p className="font-semibold text-slate-950">{formatUsd(transaction.usdAmount ?? transaction.amount)}</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {formatOriginalMoney(transaction)} @ {formatExchangeRate(transaction.exchangeRateToUsd)}
+                    </p>
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3">{transaction.orderCode || '-'}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right">
                     {role === 'admin' && (
                       <div className="flex justify-end gap-2">
                         {transaction.status === 'pending_review' && (
