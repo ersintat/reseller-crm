@@ -3,7 +3,7 @@ import { ReactNode } from 'react';
 type Tone = 'indigo' | 'emerald' | 'amber' | 'red' | 'slate';
 
 const toneClass: Record<Tone, string> = {
-  indigo: 'bg-indigo-50 text-indigoBrand ring-indigo-100',
+  indigo: 'bg-slate-50 text-indigoBrand ring-slate-200',
   emerald: 'bg-emerald-50 text-emerald-700 ring-emerald-100',
   amber: 'bg-amber-50 text-amber-700 ring-amber-100',
   red: 'bg-red-50 text-red-700 ring-red-100',
@@ -11,10 +11,10 @@ const toneClass: Record<Tone, string> = {
 };
 
 const accentClass: Record<Tone, string> = {
-  indigo: 'from-indigo-500 to-indigoBrand',
+  indigo: 'from-indigoBrand to-psnsOrange',
   emerald: 'from-emerald-400 to-emerald-600',
-  amber: 'from-amber-400 to-amber-600',
-  red: 'from-red-400 to-red-600',
+  amber: 'from-psnsOrange to-psnsCoral',
+  red: 'from-psnsCoral to-red-600',
   slate: 'from-slate-300 to-slate-500',
 };
 
@@ -31,7 +31,7 @@ export function PageHeader({
 }) {
   return (
     <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-sm">
-      <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-indigoBrand via-indigo-500 to-emerald-400" />
+      <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-indigoBrand via-psnsOrange to-psnsCoral" />
       <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
         <div>
           {eyebrow && (
@@ -60,8 +60,8 @@ export function SectionCard({
   action?: ReactNode;
 }) {
   return (
-    <section className={`bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden ${className}`}>
-      <div className="px-5 py-4 border-b border-slate-200 bg-gradient-to-b from-white to-slate-50/60">
+    <section className={`bg-white border border-psnsMist rounded-2xl shadow-sm overflow-hidden ${className}`}>
+      <div className="px-5 py-4 border-b border-psnsMist bg-gradient-to-b from-white to-slate-50/60">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h3 className="text-base font-semibold text-slate-950">{title}</h3>
@@ -122,8 +122,8 @@ export function EmptyState({
 
 export function DataTable({ children }: { children: ReactNode }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full border-separate border-spacing-0 text-sm">{children}</table>
+    <div className="max-w-full overflow-x-auto overscroll-x-contain">
+      <table className="min-w-full border-separate border-spacing-0 text-sm">{children}</table>
     </div>
   );
 }
@@ -142,7 +142,7 @@ export function Button({
   disabled?: boolean;
 }) {
   const variantClass = {
-    primary: 'bg-indigoBrand text-white border-indigoBrand shadow-sm hover:bg-indigo-900',
+    primary: 'bg-indigoBrand text-white border-indigoBrand shadow-sm hover:bg-[#001a40]',
     secondary: 'bg-white text-slate-700 border-slate-300 shadow-sm hover:bg-slate-50',
     danger: 'bg-white text-red-700 border-red-200 shadow-sm hover:bg-red-50',
   }[variant];

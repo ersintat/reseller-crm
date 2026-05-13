@@ -822,26 +822,32 @@ function PendingOrderCostsPanel({
 
   return (
     <>
-      <SectionCard
-        className={activeRows.length > 0 ? 'border-amber-200 bg-amber-50/30 shadow-amber-50' : ''}
-        title="Pending Order Costs"
-        subtitle="Track orders whose printing or shipping costs are not finalized yet."
-        action={
-          canCreate ? (
-            <Button variant="primary" onClick={openCreate}>
-              Add Pending Cost
-            </Button>
-          ) : undefined
-        }
-      >
+      <div id="pending-order-costs">
+        <SectionCard
+          className={activeRows.length > 0 ? 'border-psnsOrange bg-[#fff7ed] shadow-[0_16px_40px_rgba(236,130,55,0.12)]' : ''}
+          title="Pending Order Costs"
+          subtitle="Unfinalized printing and shipping costs tracked separately from the current amount due."
+          action={
+            canCreate ? (
+              <Button variant="primary" onClick={openCreate}>
+                Add Pending Cost
+              </Button>
+            ) : undefined
+          }
+        >
         {activeRows.length > 0 && (
-          <div className="border-b border-amber-200 bg-amber-50 px-5 py-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="border-b border-orange-200 bg-gradient-to-r from-[#fff2e6] to-white px-5 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
-                <p className="text-sm font-semibold text-amber-900">This dealer has unresolved order costs.</p>
-                <p className="mt-1 text-sm text-amber-800">{activeCountLabel} need review before the related printing or shipping costs are forgotten.</p>
+                <p className="text-sm font-bold text-indigoBrand">This dealer has unresolved order costs.</p>
+                <p className="mt-1 text-sm text-slate-700">
+                  {activeCountLabel} are not included in the current amount due. They will affect future statement totals after resolution.
+                </p>
+                <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-psnsCoral">
+                  Amount not finalized yet
+                </p>
               </div>
-              <Button onClick={() => setFilter('active')}>Review Pending Costs</Button>
+              <Button variant="secondary" onClick={() => setFilter('active')}>Review Pending Costs</Button>
             </div>
           </div>
         )}
@@ -866,27 +872,27 @@ function PendingOrderCostsPanel({
           <DataTable>
             <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-4 py-3">Order ID</th>
-                <th className="px-4 py-3">Scope</th>
-                <th className="px-4 py-3">Estimated Cost</th>
-                <th className="px-4 py-3">Final Cost</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Note</th>
-                <th className="px-4 py-3">Created</th>
-                <th className="px-4 py-3 text-right">Actions</th>
+                <th className="min-w-28 whitespace-nowrap px-4 py-3">Order ID</th>
+                <th className="min-w-24 whitespace-nowrap px-4 py-3">Scope</th>
+                <th className="min-w-36 whitespace-nowrap px-4 py-3">Estimated Cost</th>
+                <th className="min-w-32 whitespace-nowrap px-4 py-3">Final Cost</th>
+                <th className="min-w-32 whitespace-nowrap px-4 py-3">Status</th>
+                <th className="min-w-64 px-4 py-3">Note</th>
+                <th className="min-w-28 whitespace-nowrap px-4 py-3">Created</th>
+                <th className="min-w-44 whitespace-nowrap px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((cost) => (
                 <tr key={cost.id} className="border-t border-slate-100 transition hover:bg-slate-50">
-                  <td className="px-4 py-3 font-medium text-slate-950">{cost.orderCode}</td>
-                  <td className="px-4 py-3 capitalize">{cost.costScope}</td>
-                  <td className="px-4 py-3">{formatOptionalCost(cost.estimatedPrintingCost, cost.estimatedShippingCost, cost.currency)}</td>
-                  <td className="px-4 py-3">{formatOptionalCost(cost.finalPrintingCost, cost.finalShippingCost, cost.currency)}</td>
-                  <td className="px-4 py-3"><StatusBadge status={cost.status} /></td>
+                  <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-950">{cost.orderCode}</td>
+                  <td className="whitespace-nowrap px-4 py-3 capitalize">{cost.costScope}</td>
+                  <td className="whitespace-nowrap px-4 py-3">{formatOptionalCost(cost.estimatedPrintingCost, cost.estimatedShippingCost, cost.currency)}</td>
+                  <td className="whitespace-nowrap px-4 py-3">{formatOptionalCost(cost.finalPrintingCost, cost.finalShippingCost, cost.currency)}</td>
+                  <td className="whitespace-nowrap px-4 py-3"><StatusBadge status={cost.status} /></td>
                   <td className="px-4 py-3 text-slate-600">{cost.note || '-'}</td>
-                  <td className="px-4 py-3 text-slate-600">{cost.createdAt.slice(0, 10)}</td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="whitespace-nowrap px-4 py-3 text-slate-600">{cost.createdAt.slice(0, 10)}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right">
                     {role === 'admin' && (
                       <div className="flex justify-end gap-2">
                         <Button onClick={() => openEdit(cost)}>Edit</Button>
@@ -904,10 +910,11 @@ function PendingOrderCostsPanel({
             </tbody>
           </DataTable>
         )}
-        <div className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
-          Pending costs are reminders only. Statement totals change only after resolving them into real printing or shipping transactions.
+        <div className="border-t border-orange-100 bg-[#fffaf5] px-5 py-3 text-xs text-slate-600">
+          Pending costs are reminders only. They are not included in current amount due and change statement totals only after resolving into real printing or shipping transactions.
         </div>
-      </SectionCard>
+        </SectionCard>
+      </div>
 
       {(showCreate || editing) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
@@ -1511,26 +1518,38 @@ export function DealerProfilePage({
         title="Agreement"
         subtitle="Dealer agreement terms used by live statement calculations."
         action={
-          role === 'admin' ? (
+          role === 'admin' || canAddDealerTransaction ? (
             <div className="flex flex-wrap justify-end gap-2">
-              <Button
-                variant="secondary"
-                onClick={() =>
-                  downloadDealerAccountStatementPdf({
-                    dealer,
-                    statements,
-                    transactions,
-                    payments,
-                    allocations,
-                    pendingOrderCosts: dealerPendingOrderCosts,
-                  })
-                }
-              >
-                Download Account Statement
-              </Button>
-              <Button variant="secondary" onClick={openAgreementEditor}>
-                Edit Agreement
-              </Button>
+              {role === 'admin' && (
+                <Button
+                  variant="primary"
+                  onClick={() =>
+                    downloadDealerAccountStatementPdf({
+                      dealer,
+                      statements,
+                      transactions,
+                      payments,
+                      allocations,
+                      pendingOrderCosts: dealerPendingOrderCosts,
+                    })
+                  }
+                >
+                  Download Account Statement
+                </Button>
+              )}
+              {canAddDealerTransaction && (
+                <a
+                  className="inline-flex h-9 items-center justify-center rounded-lg border border-slate-300 bg-white px-3.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+                  href="#pending-order-costs"
+                >
+                  Add Pending Cost
+                </a>
+              )}
+              {role === 'admin' && (
+                <Button variant="secondary" onClick={openAgreementEditor}>
+                  Edit Agreement
+                </Button>
+              )}
             </div>
           ) : undefined
         }

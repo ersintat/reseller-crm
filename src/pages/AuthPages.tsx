@@ -1,6 +1,7 @@
 import { FormEvent, ReactNode, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import { BrandLogo } from '../components/BrandLogo';
 
 function AuthShell({
   title,
@@ -15,10 +16,10 @@ function AuthShell({
     <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
       <div className="w-full max-w-md">
         <div className="mb-6">
-          <h1 className="text-2xl font-semibold text-indigoBrand">Dealer Settlement Manager</h1>
+          <BrandLogo />
           <p className="text-sm text-slate-500 mt-1">{subtitle}</p>
         </div>
-        <div className="bg-white border rounded-lg p-6 shadow-sm">
+        <div className="rounded-2xl border border-psnsMist bg-white p-6 shadow-sm">
           <h2 className="text-xl font-semibold text-slate-900">{title}</h2>
           {children}
         </div>
@@ -67,7 +68,7 @@ export function LoginPage() {
           required
         />
         {error && <p className="text-sm text-red-600">{error}</p>}
-        <button className="w-full bg-indigoBrand text-white rounded px-3 py-2" type="submit">
+        <button className="w-full rounded-lg bg-indigoBrand px-3 py-2 font-semibold text-white" type="submit">
           Sign in
         </button>
       </form>
@@ -132,7 +133,7 @@ export function SignupPage() {
         />
         {error && <p className="text-sm text-red-600">{error}</p>}
         {message && <p className="text-sm text-emerald-700">{message}</p>}
-        <button className="w-full bg-indigoBrand text-white rounded px-3 py-2" type="submit">
+        <button className="w-full rounded-lg bg-indigoBrand px-3 py-2 font-semibold text-white" type="submit">
           Sign up
         </button>
       </form>

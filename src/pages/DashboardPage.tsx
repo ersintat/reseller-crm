@@ -119,15 +119,15 @@ export function DashboardPage({
           </div>
 
           <SectionCard
-            className={myPendingOrderCosts.length > 0 ? 'border-amber-200 bg-amber-50/30 shadow-amber-50' : ''}
+            className={myPendingOrderCosts.length > 0 ? 'border-psnsOrange bg-[#fff7ed] shadow-[0_16px_40px_rgba(236,130,55,0.12)]' : ''}
             title="My Pending Order Costs"
-            subtitle="Unresolved printing or shipping costs for stores you can view."
+            subtitle="Unresolved printing or shipping costs for stores you can view. Not included in current amount due."
           >
             {myPendingCostRows.length === 0 ? (
               <EmptyState title="No unresolved order costs for your assigned stores." />
             ) : (
               <DataTable>
-                <thead className="bg-amber-50/80 text-left text-xs uppercase tracking-wide text-slate-500">
+                <thead className="bg-[#fff2e6] text-left text-xs uppercase tracking-wide text-slate-500">
                   <tr>
                     <th className="px-4 py-3">Assigned Store</th>
                     <th className="px-4 py-3 text-right">Pending Costs</th>
@@ -136,7 +136,7 @@ export function DashboardPage({
                 </thead>
                 <tbody>
                   {myPendingCostRows.map((row) => (
-                    <tr key={row.dealer.id} className="border-t border-amber-100 bg-amber-50/40">
+                    <tr key={row.dealer.id} className="border-t border-orange-100 bg-[#fffaf5]">
                       <td className="px-4 py-3">
                         <p className="font-medium text-slate-950">{row.dealer.name}</p>
                         <p className="text-xs text-slate-500">{row.dealer.storeName || row.dealer.storeId}</p>
@@ -418,15 +418,15 @@ export function DashboardPage({
       </div>
 
       <SectionCard
-        className="border-amber-200 bg-amber-50/30 shadow-amber-50"
+        className="border-psnsOrange bg-[#fff7ed] shadow-[0_16px_40px_rgba(236,130,55,0.12)]"
         title="Pending Order Costs"
-        subtitle="Unresolved printing and shipping costs that do not affect totals yet."
+        subtitle="Unresolved printing and shipping costs tracked outside current amount due."
       >
         {pendingCostRows.length > 0 && (
-          <div className="border-b border-amber-200 bg-amber-50 px-5 py-4">
-            <p className="text-sm font-semibold text-amber-900">Action Required: unresolved order costs</p>
-            <p className="mt-1 text-sm text-amber-800">
-              Review these before production or shipping costs are missed.
+          <div className="border-b border-orange-200 bg-gradient-to-r from-[#fff2e6] to-white px-5 py-4">
+            <p className="text-sm font-bold text-indigoBrand">Action Required: unresolved order costs</p>
+            <p className="mt-1 text-sm text-slate-700">
+              These are not included in current amount due and will affect future statement totals after resolution.
             </p>
           </div>
         )}

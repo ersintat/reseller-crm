@@ -2,6 +2,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 import { useEffect } from 'react';
 import { Role } from '../../types';
 import { Button } from '../ui/Primitives';
+import { BrandLogo } from '../BrandLogo';
 
 const navItems: { label: string; to: string; roles: Role[]; marker: string }[] = [
   { label: 'Dashboard', to: '/', roles: ['admin', 'employee'], marker: 'D' },
@@ -55,18 +56,10 @@ export function AppLayout({
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <div className="flex min-h-screen">
-        <aside className="w-72 shrink-0 border-r border-slate-200 bg-white/95 px-4 py-5 shadow-[1px_0_0_rgba(15,23,42,0.02)]">
-          <div className="mb-7 rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigoBrand text-sm font-semibold text-white shadow-sm">
-                DSM
-              </div>
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Finance Ops</p>
-                <h1 className="text-base font-semibold leading-tight text-slate-950">Dealer Settlement</h1>
-              </div>
-            </div>
-            <div className="mt-4 rounded-xl bg-indigo-50 px-3 py-2 text-xs text-indigoBrand ring-1 ring-indigo-100">
+        <aside className="w-72 shrink-0 border-r border-psnsMist bg-white/95 px-4 py-5 shadow-[1px_0_0_rgba(1,35,84,0.04)]">
+          <div className="mb-7 rounded-2xl border border-psnsMist bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
+            <BrandLogo />
+            <div className="mt-4 rounded-xl bg-[#e5ebf0] px-3 py-2 text-xs font-medium text-indigoBrand ring-1 ring-psnsMist">
               Settlement review · receivables · commissions
             </div>
           </div>
@@ -83,7 +76,7 @@ export function AppLayout({
                     [
                       'group flex items-center gap-3 rounded-xl border px-3 py-2.5 text-sm font-medium transition',
                       isActive
-                        ? 'border-indigo-100 bg-indigo-50 text-indigoBrand shadow-sm'
+                        ? 'border-[#d8e0e8] bg-[#e5ebf0] text-indigoBrand shadow-sm'
                         : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-950',
                     ].join(' ')
                   }
@@ -94,7 +87,7 @@ export function AppLayout({
                         className={[
                           'flex h-7 w-7 items-center justify-center rounded-lg text-[11px] font-semibold transition',
                           isActive
-                            ? 'bg-white text-indigoBrand ring-1 ring-indigo-100'
+                            ? 'bg-white text-indigoBrand ring-1 ring-psnsMist'
                             : 'bg-slate-100 text-slate-500 group-hover:bg-white',
                         ].join(' ')}
                       >
@@ -109,10 +102,10 @@ export function AppLayout({
         </aside>
 
         <main className="flex-1 min-w-0">
-          <header className="sticky top-0 z-10 h-16 border-b border-slate-200 bg-white/85 backdrop-blur supports-[backdrop-filter]:bg-white/75">
+          <header className="sticky top-0 z-10 h-16 border-b border-psnsMist bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/80">
             <div className="flex h-full items-center justify-between px-6">
               <div className="flex items-center gap-3">
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 ring-1 ring-slate-200">
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 ring-1 ring-psnsMist">
                   USD default currency
                 </span>
                 <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-100">
@@ -129,7 +122,7 @@ export function AppLayout({
                     {initials || 'U'}
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-medium text-slate-900">{userEmail}</p>
+                    <p className="text-sm font-semibold text-slate-900">{userEmail}</p>
                     <p className="text-xs text-slate-500 capitalize">{roleLabel}</p>
                   </div>
                   <Button onClick={onSignOut}>Sign out</Button>
