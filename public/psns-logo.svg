@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 64" role="img" aria-labelledby="title desc">
+  <title id="title">PSNS Reseller CRM</title>
+  <desc id="desc">PSNS logo in navy, orange, and white.</desc>
+  <rect width="192" height="64" rx="16" fill="#012354"/>
+  <path d="M20 41V18h30.7c7.2 0 11.8 4.2 11.8 10.4S57.8 39 50.5 39H31.2v2H20Zm11.2-10.6h17.2c1.7 0 2.8-.8 2.8-2s-1.1-2-2.8-2H31.2v4Z" fill="#ffffff"/>
+  <path d="M67.5 41V18h11.3l22.4 14.7V18h11.5v23h-11.1L79 26.1V41H67.5Z" fill="#ec8237"/>
+  <path d="M119 41V18h11.3l22.4 14.7V18h11.5v23h-11.1l-22.6-14.9V41H119Z" fill="#ffffff"/>
+  <path d="M20 49h144" stroke="#f46033" stroke-width="5" stroke-linecap="round"/>
+</svg>

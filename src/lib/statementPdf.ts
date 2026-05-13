@@ -172,9 +172,10 @@ class PdfDocument {
   }
 
   private drawBrandMark(x: number, y: number) {
-    this.fillRect(x, y, 34, 34, color.indigo);
-    this.fillRect(x + 4, y + 5, 26, 3, color.coral);
-    this.drawText('PSNS', x + 5, y + 18, 8.5, true, [1, 1, 1]);
+    this.fillRect(x, y, 88, 30, color.indigo);
+    this.fillRect(x + 7, y + 5, 72, 3, color.coral);
+    this.drawText('PSNS', x + 10, y + 17, 13, true, [1, 1, 1]);
+    this.drawText('CRM', x + 56, y + 17, 8, true, color.orange);
   }
 
   header({
@@ -189,9 +190,9 @@ class PdfDocument {
     this.fillRect(0, 784, pageWidth, 58, color.indigo);
     this.fillRect(0, 782, pageWidth, 3, color.orange);
     this.drawBrandMark(margin, 798);
-    this.drawText(title, margin + 44, 818, 14, true, [1, 1, 1]);
-    this.drawText(dealerName, margin + 44, 802, 9.5, false, [0.88, 0.91, 1]);
-    this.drawText('PSNS Reseller CRM', margin + 44, 790, 7.2, false, [0.9, 0.92, 1]);
+    this.drawText(title, margin + 100, 818, 13, true, [1, 1, 1]);
+    this.drawText(dealerName, margin + 100, 802, 9.2, false, [0.88, 0.91, 1]);
+    this.drawText('PSNS Reseller CRM', margin + 100, 790, 7.2, false, [0.9, 0.92, 1]);
     meta.forEach((row, index) => this.drawText(row, 376, 816 - index * 12, 7.5, false, [0.9, 0.92, 1]));
     this.y = 762;
   }

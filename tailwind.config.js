@@ -4,11 +4,12 @@ export default {
   theme: {
     extend: {
       colors: {
-        indigoBrand: '#012354',
-        psnsBlue: '#012354',
-        psnsMist: '#e5ebf0',
-        psnsOrange: '#ec8237',
-        psnsCoral: '#f46033',
+        indigoBrand: 'var(--psns-navy)',
+        psnsBlue: 'var(--psns-navy)',
+        psnsMist: 'var(--psns-surface)',
+        psnsOrange: 'var(--psns-orange)',
+        psnsCoral: 'var(--psns-coral)',
+        psnsWhite: 'var(--psns-white)',
       },
     },
   },

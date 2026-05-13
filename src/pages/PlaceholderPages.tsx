@@ -869,46 +869,56 @@ function PendingOrderCostsPanel({
         {rows.length === 0 ? (
           <EmptyState title={filter === 'active' ? 'No unresolved order costs.' : 'No pending order costs match this filter.'} />
         ) : (
-          <DataTable>
-            <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="min-w-28 whitespace-nowrap px-4 py-3">Order ID</th>
-                <th className="min-w-24 whitespace-nowrap px-4 py-3">Scope</th>
-                <th className="min-w-36 whitespace-nowrap px-4 py-3">Estimated Cost</th>
-                <th className="min-w-32 whitespace-nowrap px-4 py-3">Final Cost</th>
-                <th className="min-w-32 whitespace-nowrap px-4 py-3">Status</th>
-                <th className="min-w-64 px-4 py-3">Note</th>
-                <th className="min-w-28 whitespace-nowrap px-4 py-3">Created</th>
-                <th className="min-w-44 whitespace-nowrap px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((cost) => (
-                <tr key={cost.id} className="border-t border-slate-100 transition hover:bg-slate-50">
-                  <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-950">{cost.orderCode}</td>
-                  <td className="whitespace-nowrap px-4 py-3 capitalize">{cost.costScope}</td>
-                  <td className="whitespace-nowrap px-4 py-3">{formatOptionalCost(cost.estimatedPrintingCost, cost.estimatedShippingCost, cost.currency)}</td>
-                  <td className="whitespace-nowrap px-4 py-3">{formatOptionalCost(cost.finalPrintingCost, cost.finalShippingCost, cost.currency)}</td>
-                  <td className="whitespace-nowrap px-4 py-3"><StatusBadge status={cost.status} /></td>
-                  <td className="px-4 py-3 text-slate-600">{cost.note || '-'}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-slate-600">{cost.createdAt.slice(0, 10)}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-right">
-                    {role === 'admin' && (
-                      <div className="flex justify-end gap-2">
-                        <Button onClick={() => openEdit(cost)}>Edit</Button>
-                        {['pending', 'partially_resolved'].includes(cost.status) && (
-                          <>
-                            <Button variant="primary" onClick={() => openResolve(cost)}>Resolve</Button>
-                            <Button variant="danger" onClick={() => cancelCost(cost)}>Cancel</Button>
-                          </>
-                        )}
+          <div className="space-y-3 p-5">
+            {rows.map((cost) => (
+              <div
+                key={cost.id}
+                className="rounded-2xl border border-orange-100 bg-white p-4 shadow-sm transition hover:border-psnsOrange/70"
+              >
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-bold text-indigoBrand">{cost.orderCode}</p>
+                      <span className="rounded-full bg-[#fff2e6] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-psnsCoral">
+                        {cost.costScope}
+                      </span>
+                      <StatusBadge status={cost.status} />
+                    </div>
+                    <div className="mt-3 grid gap-3 text-sm text-slate-600 sm:grid-cols-3">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Estimated</p>
+                        <p className="mt-1 font-semibold text-slate-900">
+                          {formatOptionalCost(cost.estimatedPrintingCost, cost.estimatedShippingCost, cost.currency)}
+                        </p>
                       </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </DataTable>
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Final</p>
+                        <p className="mt-1 font-semibold text-slate-900">
+                          {formatOptionalCost(cost.finalPrintingCost, cost.finalShippingCost, cost.currency)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Created</p>
+                        <p className="mt-1 font-semibold text-slate-900">{cost.createdAt.slice(0, 10)}</p>
+                      </div>
+                    </div>
+                    {cost.note && <p className="mt-3 text-sm leading-6 text-slate-600">{cost.note}</p>}
+                  </div>
+                  {role === 'admin' && (
+                    <div className="flex shrink-0 flex-wrap justify-start gap-2 lg:justify-end">
+                      <Button onClick={() => openEdit(cost)}>Edit</Button>
+                      {['pending', 'partially_resolved'].includes(cost.status) && (
+                        <>
+                          <Button variant="primary" onClick={() => openResolve(cost)}>Resolve</Button>
+                          <Button variant="danger" onClick={() => cancelCost(cost)}>Cancel</Button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
         )}
         <div className="border-t border-orange-100 bg-[#fffaf5] px-5 py-3 text-xs text-slate-600">
           Pending costs are reminders only. They are not included in current amount due and change statement totals only after resolving into real printing or shipping transactions.
