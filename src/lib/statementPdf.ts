@@ -135,6 +135,10 @@ class PdfDocument {
     this.y = 790;
   }
 
+  pageBreak() {
+    this.newPage();
+  }
+
   private ensureSpace(height: number) {
     if (this.y - height < bottomMargin) this.newPage();
   }
@@ -181,14 +185,18 @@ class PdfDocument {
     this.y = 762;
   }
 
-  section(title: string, subtitle?: string) {
-    this.ensureSpace(subtitle ? 28 : 22);
+  section(title: string, subtitle?: string, options: { compact?: boolean } = {}) {
+    const before = options.compact ? 7 : 11;
+    const titleGap = options.compact ? 12 : 14;
+    const subtitleGap = subtitle ? (options.compact ? 9 : 11) : 0;
+    this.ensureSpace(before + titleGap + subtitleGap + 8);
+    this.y -= before;
     this.drawText(title, margin, this.y, 10, true, color.slate950);
     this.fillRect(margin, this.y - 7, 34, 2, color.indigo);
-    this.y -= 13;
+    this.y -= titleGap;
     if (subtitle) {
       this.drawText(subtitle, margin, this.y, 7.2, false, color.slate500);
-      this.y -= 10;
+      this.y -= subtitleGap;
     }
   }
 
@@ -376,6 +384,60 @@ const statementSummaryItems = (totals: ReturnType<typeof calculateStatementTotal
   { label: 'Remaining', value: usd(totals.remaining_amount), accent: true },
 ];
 
+const transactionTableColumns: PdfColumn[] = [
+  { header: 'Date', width: 50 },
+  { header: 'Type', width: 72 },
+  { header: 'Order', width: 58 },
+  { header: 'Original', width: 78, align: 'right' },
+  { header: 'Rate', width: 46, align: 'right' },
+  { header: 'USD', width: 68, align: 'right' },
+  { header: 'Status', width: 56 },
+  { header: 'Description', width: 95 },
+];
+
+const pendingOrderCostColumns: PdfColumn[] = [
+  { header: 'Order ID', width: 88 },
+  { header: 'Scope', width: 78 },
+  { header: 'Status', width: 96 },
+  { header: 'Note', width: 261 },
+];
+
+const paymentAllocationColumns: PdfColumn[] = [
+  { header: 'Payment Date', width: 80 },
+  { header: 'Original Payment', width: 120, align: 'right' },
+  { header: 'Applied USD', width: 100, align: 'right' },
+  { header: 'Description', width: 223 },
+];
+
+const transactionRows = (transactions: SettlementTransaction[]) =>
+  transactions.map((transaction) => [
+    transaction.date,
+    pdfTransactionType(transaction.type),
+    transaction.orderCode || '-',
+    money(transaction.originalAmount ?? transaction.amount, transaction.originalCurrency ?? 'USD'),
+    formatExchangeRate(transaction.exchangeRateToUsd),
+    usd(getUsdAmount(transaction)),
+    transaction.status,
+    transaction.description || '-',
+  ]);
+
+const paymentAllocationRows = (
+  statementAllocations: DealerPaymentAllocation[],
+  paymentsById: Map<string, DealerPayment>,
+) =>
+  statementAllocations.map((allocation) => {
+    const payment = paymentsById.get(allocation.paymentId);
+    return [
+      payment?.paymentDate || '-',
+      payment ? money(payment.originalAmount ?? payment.amount, payment.originalCurrency ?? payment.currency) : '-',
+      usd(getAllocatedUsdAmount(allocation)),
+      payment?.description || '-',
+    ];
+  });
+
+const pendingOrderCostRows = (costs: PendingOrderCost[]) =>
+  costs.map((cost) => [cost.orderCode, cost.costScope, cost.status, cost.note || '-']);
+
 export function downloadStatementPdf({
   dealer,
   statement,
@@ -420,29 +482,7 @@ export function downloadStatementPdf({
   if (statementTransactions.length === 0) {
     pdf.empty('No transaction rows.');
   } else {
-    pdf.table(
-      [
-        { header: 'Date', width: 50 },
-        { header: 'Type', width: 72 },
-        { header: 'Order', width: 58 },
-        { header: 'Original', width: 78, align: 'right' },
-        { header: 'Rate', width: 46, align: 'right' },
-        { header: 'USD', width: 68, align: 'right' },
-        { header: 'Status', width: 56 },
-        { header: 'Description', width: 95 },
-      ],
-      statementTransactions.map((transaction) => [
-        transaction.date,
-        pdfTransactionType(transaction.type),
-        transaction.orderCode || '-',
-        money(transaction.originalAmount ?? transaction.amount, transaction.originalCurrency ?? 'USD'),
-        formatExchangeRate(transaction.exchangeRateToUsd),
-        usd(getUsdAmount(transaction)),
-        transaction.status,
-        transaction.description || '-',
-      ]),
-      { fontSize: 6.2, rowPadding: 5 },
-    );
+    pdf.table(transactionTableColumns, transactionRows(statementTransactions), { fontSize: 6.2, rowPadding: 5 });
     pdf.note('Platform Payout means money deposited into the dealer bank account by Etsy, Shopify, or another sales platform.');
   }
 
@@ -450,40 +490,17 @@ export function downloadStatementPdf({
   if (statementPendingCosts.length === 0) {
     pdf.empty('No pending order cost reminders.');
   } else {
-    pdf.table(
-      [
-        { header: 'Order ID', width: 88 },
-        { header: 'Scope', width: 78 },
-        { header: 'Status', width: 96 },
-        { header: 'Note', width: 261 },
-      ],
-      statementPendingCosts.map((cost) => [cost.orderCode, cost.costScope, cost.status, cost.note || '-']),
-      { fontSize: 6.5, rowPadding: 5 },
-    );
+    pdf.table(pendingOrderCostColumns, pendingOrderCostRows(statementPendingCosts), { fontSize: 6.5, rowPadding: 5 });
   }
 
   pdf.section('Payment Allocations');
   if (statementAllocations.length === 0) {
     pdf.empty('No dealer payment allocations.');
   } else {
-    pdf.table(
-      [
-        { header: 'Payment Date', width: 80 },
-        { header: 'Original Payment', width: 120, align: 'right' },
-        { header: 'Applied USD', width: 100, align: 'right' },
-        { header: 'Description', width: 223 },
-      ],
-      statementAllocations.map((allocation) => {
-        const payment = paymentsById.get(allocation.paymentId);
-        return [
-          payment?.paymentDate || '-',
-          payment ? money(payment.originalAmount ?? payment.amount, payment.originalCurrency ?? payment.currency) : '-',
-          usd(getAllocatedUsdAmount(allocation)),
-          payment?.description || '-',
-        ];
-      }),
-      { fontSize: 6.6, rowPadding: 5 },
-    );
+    pdf.table(paymentAllocationColumns, paymentAllocationRows(statementAllocations, paymentsById), {
+      fontSize: 6.6,
+      rowPadding: 5,
+    });
   }
 
   triggerDownload(
@@ -512,11 +529,21 @@ export function downloadDealerAccountStatementPdf({
       ['open', 'partially_paid', 'carried_forward'].includes(statement.status),
     );
   const dealerPayments = payments.filter((payment) => payment.dealerId === dealer.id);
+  const paymentsById = new Map(payments.map((payment) => [payment.id, payment]));
   const activePendingCosts = pendingOrderCosts.filter(
     (cost) => cost.dealerId === dealer.id && ['pending', 'partially_resolved'].includes(cost.status),
   );
+  const dealerLevelPendingCosts = activePendingCosts.filter((cost) => !cost.statementId);
   const totalPaid = rows.reduce((total, row) => total + row.totals.paid_amount, 0);
   const totalRemaining = rows.reduce((total, row) => total + row.totals.remaining_amount, 0);
+  const sortedDealerPayments = dealerPayments.slice().sort((a, b) => b.paymentDate.localeCompare(a.paymentDate));
+  const latestPayment = sortedDealerPayments[0];
+  const totalPaymentApplied = dealerPayments.reduce((total, payment) => {
+    const applied = allocations
+      .filter((allocation) => allocation.paymentId === payment.id)
+      .reduce((allocationTotal, allocation) => allocationTotal + getAllocatedUsdAmount(allocation), 0);
+    return total + (applied || getUsdAmount(payment));
+  }, 0);
   const generatedAt = new Date().toLocaleDateString();
   const pdf = new PdfDocument();
 
@@ -538,7 +565,7 @@ export function downloadDealerAccountStatementPdf({
     { label: 'Pending Order Costs', value: String(activePendingCosts.length) },
   ]);
 
-  pdf.section('Open Statements');
+  pdf.section('Open Statements', 'Open, partially paid, and carried-forward balances included in this account statement.');
   if (rows.length === 0) {
     pdf.empty('No open statement balances.');
   } else {
@@ -570,49 +597,90 @@ export function downloadDealerAccountStatementPdf({
     pdf.summaryTable([{ label: 'Total Amount Due', value: usd(totalRemaining), accent: true }]);
   }
 
-  pdf.section('Payment History');
+  pdf.section('Payment Summary');
   if (dealerPayments.length === 0) {
     pdf.empty('No dealer payment history.');
   } else {
-    pdf.table(
-      [
-        { header: 'Date', width: 76 },
-        { header: 'Original Payment', width: 120, align: 'right' },
-        { header: 'Applied USD', width: 92, align: 'right' },
-        { header: 'Description', width: 235 },
-      ],
-      dealerPayments
-        .slice()
-        .sort((a, b) => b.paymentDate.localeCompare(a.paymentDate))
-        .map((payment) => {
-          const applied = allocations
-            .filter((allocation) => allocation.paymentId === payment.id)
-            .reduce((total, allocation) => total + getAllocatedUsdAmount(allocation), 0);
-          return [
-            payment.paymentDate,
-            money(payment.originalAmount ?? payment.amount, payment.originalCurrency ?? payment.currency),
-            usd(applied || getUsdAmount(payment)),
-            payment.description || '-',
-          ];
-        }),
-      { fontSize: 6.4, rowPadding: 5 },
-    );
+    pdf.compactInfo([
+      { label: 'Payments Recorded', value: String(dealerPayments.length) },
+      { label: 'Applied USD', value: usd(totalPaymentApplied) },
+      { label: 'Latest Payment', value: latestPayment?.paymentDate || '-' },
+      {
+        label: 'Latest Amount',
+        value: latestPayment
+          ? money(latestPayment.originalAmount ?? latestPayment.amount, latestPayment.originalCurrency ?? latestPayment.currency)
+          : '-',
+      },
+    ]);
   }
 
   pdf.section('Pending Order Costs');
   if (activePendingCosts.length === 0) {
     pdf.empty('No active pending order costs.');
   } else {
-    pdf.table(
-      [
-        { header: 'Order ID', width: 88 },
-        { header: 'Scope', width: 78 },
-        { header: 'Status', width: 96 },
-        { header: 'Note', width: 261 },
-      ],
-      activePendingCosts.map((cost) => [cost.orderCode, cost.costScope, cost.status, cost.note || '-']),
-      { fontSize: 6.5, rowPadding: 5 },
-    );
+    pdf.compactInfo([
+      { label: 'Active Pending Costs', value: String(activePendingCosts.length) },
+      { label: 'Statement Linked', value: String(activePendingCosts.length - dealerLevelPendingCosts.length) },
+      { label: 'Dealer Level', value: String(dealerLevelPendingCosts.length) },
+      { label: 'Financial Impact', value: 'None until resolved' },
+    ]);
+    pdf.note('Pending order costs do not affect totals until resolved into confirmed printing or shipping transactions.');
+  }
+
+  rows.forEach(({ statement, totals }) => {
+    const statementTransactions = transactions.filter((transaction) => transaction.statementId === statement.id);
+    const statementAllocations = allocations.filter((allocation) => allocation.statementId === statement.id);
+    const statementPendingCosts = activePendingCosts.filter((cost) => cost.statementId === statement.id);
+
+    pdf.pageBreak();
+    pdf.section(`Statement Detail - ${statement.month}`);
+    pdf.compactInfo([
+      { label: 'Dealer', value: dealer.storeName || dealer.name },
+      { label: 'Period', value: statement.month },
+      { label: 'Status', value: statement.status },
+      { label: 'Remaining', value: usd(totals.remaining_amount) },
+    ]);
+
+    pdf.section('Statement Summary', undefined, { compact: true });
+    pdf.summaryTable(statementSummaryItems(totals));
+
+    pdf.section('Transactions', undefined, { compact: true });
+    if (statementTransactions.length === 0) {
+      pdf.empty('No transaction rows for this statement.');
+    } else {
+      pdf.table(transactionTableColumns, transactionRows(statementTransactions), { fontSize: 6.2, rowPadding: 5 });
+      pdf.note('Statement summary totals are based on confirmed transactions.');
+    }
+
+    pdf.section('Payment Allocations', undefined, { compact: true });
+    if (statementAllocations.length === 0) {
+      pdf.empty('No dealer payment allocations.');
+    } else {
+      pdf.table(paymentAllocationColumns, paymentAllocationRows(statementAllocations, paymentsById), {
+        fontSize: 6.6,
+        rowPadding: 5,
+      });
+    }
+
+    pdf.section('Pending Order Costs', undefined, { compact: true });
+    if (statementPendingCosts.length === 0) {
+      pdf.empty('No statement-specific pending order costs.');
+    } else {
+      pdf.table(pendingOrderCostColumns, pendingOrderCostRows(statementPendingCosts), {
+        fontSize: 6.5,
+        rowPadding: 5,
+      });
+    }
+  });
+
+  if (dealerLevelPendingCosts.length > 0) {
+    pdf.pageBreak();
+    pdf.section('Dealer-Level Pending Order Costs');
+    pdf.note('These unresolved costs are not linked to a specific statement and do not affect totals until resolved.');
+    pdf.table(pendingOrderCostColumns, pendingOrderCostRows(dealerLevelPendingCosts), {
+      fontSize: 6.5,
+      rowPadding: 5,
+    });
   }
 
   triggerDownload(
