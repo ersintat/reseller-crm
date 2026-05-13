@@ -3153,48 +3153,79 @@ export function EmployeesPage({ employees, dealers, commissions, allocations }: 
 }) {
   return (
     <PageShell title="Employees" subtitle="Commission ledger overview">
-      <table className="w-full bg-white border rounded-lg text-sm">
-        <thead className="bg-slate-100">
-          <tr>
-            <th className="p-2 text-left">Name</th>
-            <th>Assigned Stores</th>
-            <th>Open Balance</th>
-            <th>Current Month</th>
-            <th>Total Paid</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
+      <SectionCard title="Employee Commission Accounts" subtitle="Assigned stores, open commission balance, and payment progress.">
+        <div className="space-y-3 p-5">
           {employees.map((employee) => {
             const open = getEmployeeOpenCommissionBalance(employee.id, commissions, allocations);
             const current = getCurrentMonthEmployeeCommission(employee.id, commissions);
             const totalPaid = commissions
               .filter((commission) => commission.employeeId === employee.id)
               .reduce((total, commission) => total + commission.paidAmount, 0);
+            const assignedDealers = employee.assignments.map((assignment) => {
+              const dealer = dealers.find((row) => row.storeId === assignment.storeId);
+              return {
+                name: dealer?.storeName || dealer?.name || assignment.storeId,
+                rate: assignment.commissionRatePct,
+                status: assignment.status,
+              };
+            });
             return (
-              <tr key={employee.id} className="border-t">
-                <td className="p-2">{employee.name}</td>
-                <td>
-                  {employee.assignments
-                    .map((assignment) => {
-                      const dealer = dealers.find((row) => row.storeId === assignment.storeId);
-                      return `${dealer?.storeName || dealer?.name || assignment.storeId} (${assignment.commissionRatePct}%)`;
-                    })
-                    .join(', ')}
-                </td>
-                <td>{formatUsd(open)}</td>
-                <td>{formatUsd(current)}</td>
-                <td>{formatUsd(totalPaid)}</td>
-                <td>
-                  <Link to={`/employees/${employee.id}`} className="text-indigoBrand">
-                    View
-                  </Link>
-                </td>
-              </tr>
+              <div
+                key={employee.id}
+                className="rounded-2xl border border-psnsMist bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow-md"
+              >
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-base font-semibold text-indigoBrand">{employee.name}</p>
+                      <StatusBadge status={employee.status || 'active'} />
+                    </div>
+                    <p className="mt-1 text-sm text-slate-500">{employee.roleTitle}</p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {assignedDealers.length === 0 ? (
+                        <span className="rounded-full bg-slate-50 px-3 py-1 text-xs font-medium text-slate-500 ring-1 ring-psnsMist">
+                          No assigned stores
+                        </span>
+                      ) : (
+                        assignedDealers.map((dealer) => (
+                          <span
+                            key={`${employee.id}-${dealer.name}`}
+                            className="rounded-full bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700 ring-1 ring-psnsMist"
+                          >
+                            {dealer.name} · {dealer.rate}%
+                          </span>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[520px]">
+                    <div className="rounded-xl bg-slate-50 px-3 py-2 text-right ring-1 ring-psnsMist">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Open Balance</p>
+                      <p className="mt-1 text-sm font-semibold text-indigoBrand">{formatUsd(open)}</p>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 px-3 py-2 text-right ring-1 ring-psnsMist">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Current Month</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-950">{formatUsd(current)}</p>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 px-3 py-2 text-right ring-1 ring-psnsMist">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Total Paid</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-950">{formatUsd(totalPaid)}</p>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 justify-start lg:justify-end">
+                    <Link
+                      to={`/employees/${employee.id}`}
+                      className="inline-flex h-9 items-center justify-center rounded-lg border border-psnsMist bg-white px-3.5 text-sm font-semibold text-indigoBrand shadow-sm transition hover:bg-slate-50"
+                    >
+                      View
+                    </Link>
+                  </div>
+                </div>
+              </div>
             );
           })}
-        </tbody>
-      </table>
+        </div>
+      </SectionCard>
     </PageShell>
   );
 }
