@@ -35,6 +35,7 @@ interface DealerAccountPdfInput {
 
 type Align = 'left' | 'right' | 'center';
 type Tone = [number, number, number];
+type PdfLogo = { data: string; width: number; height: number };
 
 interface PdfColumn {
   header: string;
@@ -84,6 +85,44 @@ const estimateTextWidth = (value: string, size: number) => ascii(value).length *
 
 const slug = (value: string) => value.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
 
+const binaryStringToBytes = (value: string): Uint8Array<ArrayBuffer> => {
+  const bytes = new Uint8Array(new ArrayBuffer(value.length));
+  for (let index = 0; index < value.length; index += 1) {
+    bytes[index] = value.charCodeAt(index) & 0xff;
+  }
+  return bytes;
+};
+
+const arrayBufferToBinaryString = (buffer: ArrayBuffer) => {
+  const bytes = new Uint8Array(buffer);
+  const chunks: string[] = [];
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    chunks.push(String.fromCharCode(...bytes.slice(index, index + chunkSize)));
+  }
+  return chunks.join('');
+};
+
+let logoPromise: Promise<PdfLogo | null> | null = null;
+
+const loadPdfLogo = () => {
+  logoPromise ??= fetch('/psns-logo-pdf.jpg')
+    .then(async (response) => {
+      if (!response.ok) return null;
+      return {
+        data: arrayBufferToBinaryString(await response.arrayBuffer()),
+        width: 256,
+        height: 256,
+      };
+    })
+    .catch((error) => {
+      console.warn('Statement PDF logo could not be loaded.', error);
+      return null;
+    });
+
+  return logoPromise;
+};
+
 const pdfTransactionType = (type: SettlementTransaction['type']) => {
   const label = formatTransactionType(type);
   return label
@@ -124,6 +163,8 @@ const wrapText = (value: string, width: number, size: number) => {
 class PdfDocument {
   private pages: string[][] = [[]];
   private y = 790;
+
+  constructor(private logo: PdfLogo | null = null) {}
 
   private current() {
     return this.pages[this.pages.length - 1];
@@ -177,6 +218,17 @@ class PdfDocument {
     this.drawText('PSNS', x + 5, y + 18, 8.5, true, [1, 1, 1]);
   }
 
+  private drawLogo(x: number, y: number, size: number) {
+    if (!this.logo) {
+      this.drawBrandMark(x, y);
+      return;
+    }
+
+    this.fillRect(x - 2, y - 2, size + 4, size + 4, [1, 1, 1]);
+    this.strokeRect(x - 2, y - 2, size + 4, size + 4, color.slate200);
+    this.push(`q ${size} 0 0 ${size} ${x} ${y} cm /Logo Do Q`);
+  }
+
   header({
     title,
     dealerName,
@@ -188,7 +240,7 @@ class PdfDocument {
   }) {
     this.fillRect(0, 784, pageWidth, 58, color.indigo);
     this.fillRect(0, 782, pageWidth, 3, color.orange);
-    this.drawBrandMark(margin, 798);
+    this.drawLogo(margin, 797, 36);
     this.drawText(title, margin + 44, 818, 14, true, [1, 1, 1]);
     this.drawText(dealerName, margin + 44, 802, 9.5, false, [0.88, 0.91, 1]);
     this.drawText('PSNS Reseller CRM', margin + 44, 790, 7.2, false, [0.9, 0.92, 1]);
@@ -353,17 +405,28 @@ class PdfDocument {
     this.addFooters(footer);
     const objects: string[] = [];
     objects.push('<< /Type /Catalog /Pages 2 0 R >>');
-    const kids = this.pages.map((_, index) => `${5 + index * 2} 0 R`).join(' ');
-    objects.push(`<< /Type /Pages /Kids [${kids}] /Count ${this.pages.length} >>`);
+    objects.push('');
     objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
     objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>');
+    const logoObjectId = this.logo ? objects.length + 1 : null;
+
+    if (this.logo) {
+      objects.push(
+        `<< /Type /XObject /Subtype /Image /Width ${this.logo.width} /Height ${this.logo.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${this.logo.data.length} >>\nstream\n${this.logo.data}\nendstream`,
+      );
+    }
+
+    const firstPageObject = objects.length + 1;
+    const kids = this.pages.map((_, index) => `${firstPageObject + index * 2} 0 R`).join(' ');
+    objects[1] = `<< /Type /Pages /Kids [${kids}] /Count ${this.pages.length} >>`;
+    const resourceObjects = logoObjectId ? `/XObject << /Logo ${logoObjectId} 0 R >>` : '';
 
     this.pages.forEach((commands, index) => {
-      const pageObject = 5 + index * 2;
+      const pageObject = firstPageObject + index * 2;
       const contentObject = pageObject + 1;
       const stream = commands.join('\n');
       objects.push(
-        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentObject} 0 R >>`,
+        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> ${resourceObjects} >> /Contents ${contentObject} 0 R >>`,
       );
       objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
     });
@@ -380,11 +443,11 @@ class PdfDocument {
       pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
     });
     pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
-    return pdf;
+    return binaryStringToBytes(pdf);
   }
 }
 
-const triggerDownload = (pdf: string, filename: string) => {
+const triggerDownload = (pdf: Uint8Array<ArrayBuffer>, filename: string) => {
   const blob = new Blob([pdf], { type: 'application/pdf' });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
@@ -462,7 +525,7 @@ const paymentAllocationRows = (
 const pendingOrderCostRows = (costs: PendingOrderCost[]) =>
   costs.map((cost) => [cost.orderCode, cost.costScope, cost.status, cost.note || '-']);
 
-export function downloadStatementPdf({
+export async function downloadStatementPdf({
   dealer,
   statement,
   transactions,
@@ -479,7 +542,7 @@ export function downloadStatementPdf({
     (cost) => cost.statementId === statement.id || (!cost.statementId && cost.dealerId === dealer.id),
   );
   const generatedAt = new Date().toLocaleDateString();
-  const pdf = new PdfDocument();
+  const pdf = new PdfDocument(await loadPdfLogo());
 
   pdf.header({
     title: 'Dealer Settlement Statement',
@@ -533,7 +596,7 @@ export function downloadStatementPdf({
   );
 }
 
-export function downloadDealerAccountStatementPdf({
+export async function downloadDealerAccountStatementPdf({
   dealer,
   statements,
   transactions,
@@ -569,7 +632,7 @@ export function downloadDealerAccountStatementPdf({
     return total + (applied || getUsdAmount(payment));
   }, 0);
   const generatedAt = new Date().toLocaleDateString();
-  const pdf = new PdfDocument();
+  const pdf = new PdfDocument(await loadPdfLogo());
 
   pdf.header({
     title: 'Dealer Account Statement',

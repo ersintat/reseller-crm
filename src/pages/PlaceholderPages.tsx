@@ -3810,54 +3810,56 @@ export function AssignmentsPage({
           </Button>
         }
       >
-        <DataTable>
-          <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-4 py-3">Employee</th>
-              <th className="px-4 py-3">Assigned Store</th>
-              <th className="px-4 py-3 text-right">Commission Rate</th>
-              <th className="px-4 py-3">View Transactions</th>
-              <th className="px-4 py-3">Add Transactions</th>
-              <th className="px-4 py-3">Edit Transactions</th>
-              <th className="px-4 py-3">Delete Transactions</th>
-              <th className="px-4 py-3">Employee Transaction Approval</th>
-              <th className="px-4 py-3">View Commission</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3 text-right">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={`${row.employee.id}-${row.assignment.storeId}`} className="border-t border-slate-100 transition hover:bg-slate-50">
-                <td className="px-4 py-3">
-                  <p className="font-medium text-slate-950">{row.employee.name}</p>
-                  <p className="text-xs text-slate-500">{row.employee.roleTitle}</p>
-                </td>
-                <td className="px-4 py-3 font-medium text-slate-900">{row.store?.name || row.dealer?.storeName || row.dealer?.name || row.assignment.storeId}</td>
-                <td className="px-4 py-3 text-right font-semibold text-slate-950">{row.assignment.commissionRatePct}%</td>
-                <td className="px-4 py-3"><PermissionBadge enabled={row.assignment.canViewTransactions} /></td>
-                <td className="px-4 py-3"><PermissionBadge enabled={row.assignment.canAddTransactions} /></td>
-                <td className="px-4 py-3"><PermissionBadge enabled={row.assignment.canEditTransactions} /></td>
-                <td className="px-4 py-3"><PermissionBadge enabled={row.assignment.canDeleteTransactions} /></td>
-                <td className="px-4 py-3">
-                  <span className="inline-flex rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-700 ring-1 ring-indigo-100">
-                    {row.assignment.transactionApprovalMode === 'confirmed' ? 'Confirmed Immediately' : 'Pending Review'}
-                  </span>
-                </td>
-                <td className="px-4 py-3"><PermissionBadge enabled={row.assignment.canViewCommission} /></td>
-                <td className="px-4 py-3"><StatusBadge status={row.assignment.status} /></td>
-                <td className="px-4 py-3 text-right">
-                  <button
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-                    onClick={() => openEditor(row)}
-                  >
-                    Edit
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </DataTable>
+        <div className="space-y-3 p-5">
+          {rows.map((row) => {
+            const storeName = row.store?.name || row.dealer?.storeName || row.dealer?.name || row.assignment.storeId;
+            return (
+              <div
+                key={`${row.employee.id}-${row.assignment.storeId}`}
+                className="rounded-2xl border border-psnsMist bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow-md"
+              >
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-semibold text-indigoBrand">{row.employee.name}</p>
+                      <StatusBadge status={row.assignment.status} />
+                    </div>
+                    <p className="mt-1 text-sm font-medium text-slate-900">{storeName}</p>
+                    <p className="mt-1 text-xs text-slate-500">{row.employee.roleTitle}</p>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap items-center gap-2 lg:justify-end">
+                    <span className="rounded-full bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-800 ring-1 ring-psnsMist">
+                      {row.assignment.commissionRatePct}% commission
+                    </span>
+                    <span className="rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigoBrand ring-1 ring-indigo-100">
+                      {row.assignment.transactionApprovalMode === 'confirmed' ? 'Confirmed Immediately' : 'Pending Review'}
+                    </span>
+                    <button
+                      className="rounded-lg border border-psnsMist bg-white px-3 py-1.5 text-xs font-semibold text-indigoBrand shadow-sm transition hover:bg-slate-50"
+                      onClick={() => openEditor(row)}
+                    >
+                      Edit
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                  {[
+                    ['View transactions', row.assignment.canViewTransactions],
+                    ['Add transactions', row.assignment.canAddTransactions],
+                    ['Edit transactions', row.assignment.canEditTransactions],
+                    ['Delete transactions', row.assignment.canDeleteTransactions],
+                    ['View commission', row.assignment.canViewCommission],
+                  ].map(([label, enabled]) => (
+                    <div key={String(label)} className="rounded-xl bg-slate-50 px-3 py-2 ring-1 ring-psnsMist">
+                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+                      <PermissionBadge enabled={Boolean(enabled)} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </SectionCard>
 
       {creating && (
