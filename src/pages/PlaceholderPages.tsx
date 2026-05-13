@@ -64,7 +64,7 @@ import {
   type SupportedCurrency,
 } from '../lib/displayLabels';
 import { fetchExchangeRateToUsd } from '../lib/exchangeRateService';
-import { downloadStatementPdf } from '../lib/statementPdf';
+import { downloadDealerAccountStatementPdf, downloadStatementPdf } from '../lib/statementPdf';
 
 const transactionTypes: TransactionType[] = [
   'bank_payout',
@@ -1512,9 +1512,26 @@ export function DealerProfilePage({
         subtitle="Dealer agreement terms used by live statement calculations."
         action={
           role === 'admin' ? (
-            <Button variant="secondary" onClick={openAgreementEditor}>
-              Edit Agreement
-            </Button>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  downloadDealerAccountStatementPdf({
+                    dealer,
+                    statements,
+                    transactions,
+                    payments,
+                    allocations,
+                    pendingOrderCosts: dealerPendingOrderCosts,
+                  })
+                }
+              >
+                Download Account Statement
+              </Button>
+              <Button variant="secondary" onClick={openAgreementEditor}>
+                Edit Agreement
+              </Button>
+            </div>
           ) : undefined
         }
       >

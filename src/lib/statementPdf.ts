@@ -11,12 +11,22 @@ import {
   getAllocatedUsdAmount,
   getEffectiveStatementPaidAmount,
   getUsdAmount,
+  sortStatementsByPeriod,
 } from './statementCalculations';
 import { formatExchangeRate, formatTransactionType } from './displayLabels';
 
 interface StatementPdfInput {
   dealer: Dealer;
   statement: Statement;
+  transactions: SettlementTransaction[];
+  payments: DealerPayment[];
+  allocations: DealerPaymentAllocation[];
+  pendingOrderCosts: PendingOrderCost[];
+}
+
+interface DealerAccountPdfInput {
+  dealer: Dealer;
+  statements: Statement[];
   transactions: SettlementTransaction[];
   payments: DealerPayment[];
   allocations: DealerPaymentAllocation[];
@@ -34,21 +44,21 @@ interface PdfColumn {
 
 const pageWidth = 595;
 const pageHeight = 842;
-const margin = 42;
+const margin = 36;
 const contentWidth = pageWidth - margin * 2;
-const bottomMargin = 62;
+const bottomMargin = 52;
 
 const color = {
   slate950: [0.06, 0.09, 0.16] as Tone,
   slate700: [0.2, 0.25, 0.33] as Tone,
   slate500: [0.39, 0.45, 0.55] as Tone,
+  slate300: [0.8, 0.84, 0.89] as Tone,
   slate200: [0.89, 0.91, 0.94] as Tone,
   slate100: [0.95, 0.97, 0.99] as Tone,
   slate50: [0.98, 0.99, 1] as Tone,
   indigo: [0.17, 0.13, 0.55] as Tone,
-  indigoSoft: [0.93, 0.94, 1] as Tone,
+  indigoSoft: [0.94, 0.95, 1] as Tone,
   emerald: [0.02, 0.48, 0.31] as Tone,
-  amberSoft: [1, 0.97, 0.89] as Tone,
 };
 
 const usd = (amount: number) =>
@@ -67,20 +77,31 @@ const escapePdf = (value: string) =>
 
 const tone = ([r, g, b]: Tone) => `${r} ${g} ${b}`;
 
-const estimateTextWidth = (value: string, size: number) => ascii(value).length * size * 0.48;
+const estimateTextWidth = (value: string, size: number) => ascii(value).length * size * 0.47;
+
+const slug = (value: string) => value.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
+
+const pdfTransactionType = (type: SettlementTransaction['type']) => {
+  const label = formatTransactionType(type);
+  return label
+    .replace('Platform Payout to Dealer Bank', 'Platform Payout')
+    .replace('Printing Cost', 'Printing')
+    .replace('Shipping Cost', 'Shipping')
+    .replace('Manual Adjustment', 'Adjustment');
+};
 
 const wrapText = (value: string, width: number, size: number) => {
-  const maxChars = Math.max(Math.floor(width / (size * 0.48)), 8);
+  const maxChars = Math.max(Math.floor(width / (size * 0.47)), 8);
   const words = ascii(value || '-').split(/\s+/).filter(Boolean);
   const lines: string[] = [];
   let line = '';
 
-  words.forEach((word) => {
+  for (const word of words) {
     const next = line ? `${line} ${word}` : word;
     if (next.length > maxChars && line) {
       lines.push(line);
       line = word;
-      return;
+      continue;
     }
     if (word.length > maxChars) {
       if (line) lines.push(line);
@@ -88,10 +109,10 @@ const wrapText = (value: string, width: number, size: number) => {
         lines.push(word.slice(index, index + maxChars));
       }
       line = '';
-      return;
+      continue;
     }
     line = next;
-  });
+  }
 
   if (line) lines.push(line);
   return lines.length > 0 ? lines : ['-'];
@@ -99,7 +120,7 @@ const wrapText = (value: string, width: number, size: number) => {
 
 class PdfDocument {
   private pages: string[][] = [[]];
-  private y = 784;
+  private y = 790;
 
   private current() {
     return this.pages[this.pages.length - 1];
@@ -111,7 +132,7 @@ class PdfDocument {
 
   private newPage() {
     this.pages.push([]);
-    this.y = 784;
+    this.y = 790;
   }
 
   private ensureSpace(height: number) {
@@ -126,157 +147,157 @@ class PdfDocument {
     this.push(`${tone(stroke)} RG ${x} ${y} ${width} ${height} re S`);
   }
 
-  private line(x1: number, y1: number, x2: number, y2: number, stroke: Tone = color.slate200) {
-    this.push(`${tone(stroke)} RG ${x1} ${y1} m ${x2} ${y2} l S`);
-  }
-
   private drawText(
     value: string,
     x: number,
     y: number,
-    size = 9,
+    size = 8,
     bold = false,
     fill: Tone = color.slate700,
     align: Align = 'left',
     width = 0,
   ) {
     const font = bold ? 'F2' : 'F1';
-    const text = escapePdf(value);
     let tx = x;
     if (align === 'right') tx = x + width - estimateTextWidth(value, size);
     if (align === 'center') tx = x + (width - estimateTextWidth(value, size)) / 2;
-    this.push(`${tone(fill)} rg BT /${font} ${size} Tf ${tx.toFixed(2)} ${y.toFixed(2)} Td (${text}) Tj ET`);
-  }
-
-  private textBlock(lines: string[], x: number, y: number, size = 9, bold = false, fill = color.slate700) {
-    lines.forEach((line, index) => this.drawText(line, x, y - index * (size + 3), size, bold, fill));
+    this.push(`${tone(fill)} rg BT /${font} ${size} Tf ${tx.toFixed(2)} ${y.toFixed(2)} Td (${escapePdf(value)}) Tj ET`);
   }
 
   header({
     title,
     dealerName,
-    period,
-    generatedDate,
-    reportingCurrency,
-    dealerCurrency,
+    meta,
   }: {
     title: string;
     dealerName: string;
-    period: string;
-    generatedDate: string;
-    reportingCurrency: string;
-    dealerCurrency: string;
+    meta: string[];
   }) {
-    this.fillRect(0, 760, pageWidth, 82, color.indigo);
-    this.fillRect(margin, 752, 72, 4, [0.47, 0.61, 1]);
-    this.drawText(title, margin, 807, 19, true, [1, 1, 1]);
-    this.drawText(dealerName, margin, 786, 12, false, [0.88, 0.91, 1]);
-    this.drawText(`Period ${period}`, 400, 807, 10, true, [1, 1, 1]);
-    this.drawText(`Generated ${generatedDate}`, 400, 792, 9, false, [0.88, 0.91, 1]);
-    this.drawText(`Reporting ${reportingCurrency} / Dealer ${dealerCurrency}`, 400, 778, 9, false, [0.88, 0.91, 1]);
-    this.y = 728;
+    this.fillRect(0, 784, pageWidth, 58, color.indigo);
+    this.fillRect(margin, 778, 58, 3, [0.53, 0.64, 1]);
+    this.drawText(title, margin, 816, 15, true, [1, 1, 1]);
+    this.drawText(dealerName, margin, 798, 9.5, false, [0.88, 0.91, 1]);
+    meta.forEach((row, index) => this.drawText(row, 376, 816 - index * 12, 7.5, false, [0.9, 0.92, 1]));
+    this.y = 762;
   }
 
   section(title: string, subtitle?: string) {
-    this.ensureSpace(subtitle ? 42 : 32);
-    this.drawText(title, margin, this.y, 13, true, color.slate950);
-    this.fillRect(margin, this.y - 10, 42, 3, color.indigo);
-    this.y -= 17;
+    this.ensureSpace(subtitle ? 28 : 22);
+    this.drawText(title, margin, this.y, 10, true, color.slate950);
+    this.fillRect(margin, this.y - 7, 34, 2, color.indigo);
+    this.y -= 13;
     if (subtitle) {
-      this.drawText(subtitle, margin, this.y, 8.5, false, color.slate500);
-      this.y -= 14;
+      this.drawText(subtitle, margin, this.y, 7.2, false, color.slate500);
+      this.y -= 10;
     }
   }
 
-  infoGrid(items: { label: string; value: string }[], columns = 2) {
-    const gap = 10;
-    const cardWidth = (contentWidth - gap * (columns - 1)) / columns;
-    const cardHeight = 44;
-    this.ensureSpace(Math.ceil(items.length / columns) * (cardHeight + gap) + 8);
+  compactInfo(items: { label: string; value: string }[]) {
+    const rowHeight = 19;
+    const colWidth = contentWidth / 4;
+    const rows = Math.ceil(items.length / 4);
+    this.ensureSpace(rows * rowHeight + 8);
 
     items.forEach((item, index) => {
-      const col = index % columns;
-      const row = Math.floor(index / columns);
-      const x = margin + col * (cardWidth + gap);
-      const y = this.y - row * (cardHeight + gap);
-      this.fillRect(x, y - cardHeight, cardWidth, cardHeight, color.slate50);
-      this.strokeRect(x, y - cardHeight, cardWidth, cardHeight);
-      this.drawText(item.label.toUpperCase(), x + 10, y - 17, 7, true, color.slate500);
-      this.drawText(item.value, x + 10, y - 33, 10, true, color.slate950);
+      const col = index % 4;
+      const row = Math.floor(index / 4);
+      const x = margin + col * colWidth;
+      const y = this.y - row * rowHeight;
+      this.drawText(item.label.toUpperCase(), x, y, 6, true, color.slate500);
+      this.drawText(item.value, x, y - 10, 8, true, color.slate950);
     });
 
-    this.y -= Math.ceil(items.length / columns) * (cardHeight + gap) + 6;
+    this.y -= rows * rowHeight + 6;
   }
 
-  summaryCards(items: { label: string; value: string; accent?: boolean }[]) {
-    const gap = 8;
-    const columns = 3;
-    const cardWidth = (contentWidth - gap * (columns - 1)) / columns;
-    const cardHeight = 48;
-    this.ensureSpace(Math.ceil(items.length / columns) * (cardHeight + gap) + 8);
+  summaryTable(items: { label: string; value: string; accent?: boolean }[]) {
+    const colWidth = contentWidth / 2;
+    const rowHeight = 20;
+    const rows = Math.ceil(items.length / 2);
+    this.ensureSpace(rows * rowHeight + 12);
 
     items.forEach((item, index) => {
-      const col = index % columns;
-      const row = Math.floor(index / columns);
-      const x = margin + col * (cardWidth + gap);
-      const y = this.y - row * (cardHeight + gap);
-      this.fillRect(x, y - cardHeight, cardWidth, cardHeight, item.accent ? color.indigoSoft : color.slate50);
-      this.strokeRect(x, y - cardHeight, cardWidth, cardHeight, item.accent ? [0.72, 0.75, 0.98] : color.slate200);
-      if (item.accent) this.fillRect(x, y - cardHeight, 4, cardHeight, color.indigo);
-      this.drawText(item.label.toUpperCase(), x + 12, y - 17, 7, true, color.slate500);
-      this.drawText(item.value, x + 12, y - 35, 13, true, item.accent ? color.indigo : color.slate950);
+      const col = index % 2;
+      const row = Math.floor(index / 2);
+      const x = margin + col * colWidth;
+      const y = this.y - row * rowHeight;
+      this.fillRect(x, y - rowHeight + 2, colWidth, rowHeight, item.accent ? color.indigoSoft : [1, 1, 1]);
+      this.strokeRect(x, y - rowHeight + 2, colWidth, rowHeight, color.slate200);
+      if (item.accent) this.fillRect(x, y - rowHeight + 2, 3, rowHeight, color.indigo);
+      this.drawText(item.label, x + 8, y - 11, 7.5, false, color.slate700);
+      this.drawText(item.value, x + 8, y - 11, 8, true, item.accent ? color.indigo : color.slate950, 'right', colWidth - 16);
     });
 
-    this.y -= Math.ceil(items.length / columns) * (cardHeight + gap) + 6;
+    this.y -= rows * rowHeight + 10;
+  }
+
+  note(value: string) {
+    this.ensureSpace(18);
+    this.drawText(value, margin, this.y, 7.1, false, color.slate500);
+    this.y -= 12;
   }
 
   empty(message: string) {
-    this.ensureSpace(34);
-    this.fillRect(margin, this.y - 28, contentWidth, 28, color.slate50);
-    this.strokeRect(margin, this.y - 28, contentWidth, 28);
-    this.drawText(message, margin + 10, this.y - 18, 9, false, color.slate500);
-    this.y -= 38;
+    this.ensureSpace(24);
+    this.fillRect(margin, this.y - 20, contentWidth, 20, color.slate50);
+    this.strokeRect(margin, this.y - 20, contentWidth, 20);
+    this.drawText(message, margin + 8, this.y - 13, 7.5, false, color.slate500);
+    this.y -= 28;
   }
 
-  table(columns: PdfColumn[], rows: string[][]) {
+  table(columns: PdfColumn[], rows: string[][], options: { fontSize?: number; rowPadding?: number } = {}) {
+    const fontSize = options.fontSize ?? 6.6;
+    const rowPadding = options.rowPadding ?? 6;
+    const headerHeight = 17;
+    const lineHeight = fontSize + 2.2;
+
     const drawHeader = () => {
-      this.fillRect(margin, this.y - 22, contentWidth, 22, color.slate100);
-      this.strokeRect(margin, this.y - 22, contentWidth, 22);
+      this.fillRect(margin, this.y - headerHeight, contentWidth, headerHeight, color.slate100);
+      this.strokeRect(margin, this.y - headerHeight, contentWidth, headerHeight);
       let x = margin;
       columns.forEach((column) => {
-        this.drawText(column.header.toUpperCase(), x + 5, this.y - 14, 6.8, true, color.slate500, column.align ?? 'left', column.width - 10);
+        this.drawText(
+          column.header.toUpperCase(),
+          x + 4,
+          this.y - 11,
+          6.1,
+          true,
+          color.slate500,
+          column.align ?? 'left',
+          column.width - 8,
+        );
         x += column.width;
       });
-      this.y -= 22;
+      this.y -= headerHeight;
     };
 
-    this.ensureSpace(46);
+    this.ensureSpace(38);
     drawHeader();
 
     rows.forEach((row, rowIndex) => {
-      const cellLines = row.map((cell, index) => wrapText(cell, columns[index].width - 10, 7.4));
+      const cellLines = row.map((cell, index) => wrapText(cell, columns[index].width - 8, fontSize));
       const lineCount = Math.max(...cellLines.map((lines) => lines.length));
-      const rowHeight = Math.max(26, lineCount * 10 + 10);
+      const rowHeight = Math.max(18, lineCount * lineHeight + rowPadding);
       if (this.y - rowHeight < bottomMargin) {
         this.newPage();
         drawHeader();
       }
 
       this.fillRect(margin, this.y - rowHeight, contentWidth, rowHeight, rowIndex % 2 === 0 ? [1, 1, 1] : color.slate50);
-      this.strokeRect(margin, this.y - rowHeight, contentWidth, rowHeight, [0.91, 0.93, 0.96]);
+      this.strokeRect(margin, this.y - rowHeight, contentWidth, rowHeight, [0.92, 0.94, 0.96]);
       let x = margin;
       columns.forEach((column, index) => {
         const lines = cellLines[index];
         lines.forEach((line, lineIndex) => {
           this.drawText(
             line,
-            x + 5,
-            this.y - 14 - lineIndex * 10,
-            7.4,
+            x + 4,
+            this.y - 12 - lineIndex * lineHeight,
+            fontSize,
             false,
             color.slate700,
             column.align ?? 'left',
-            column.width - 10,
+            column.width - 8,
           );
         });
         x += column.width;
@@ -284,24 +305,20 @@ class PdfDocument {
       this.y -= rowHeight;
     });
 
-    this.y -= 12;
+    this.y -= 8;
   }
 
-  addFooters() {
+  addFooters(footer: string) {
     const total = this.pages.length;
     this.pages.forEach((commands, index) => {
-      commands.push(`${tone(color.slate200)} RG ${margin} 38 m ${pageWidth - margin} 38 l S`);
-      commands.push(
-        `${tone(color.slate500)} rg BT /F1 7.5 Tf ${margin} 24 Td (Generated by Dealer Settlement Manager. This statement is based on confirmed transactions.) Tj ET`,
-      );
-      commands.push(
-        `${tone(color.slate500)} rg BT /F1 7.5 Tf ${pageWidth - margin - 48} 24 Td (Page ${index + 1} of ${total}) Tj ET`,
-      );
+      commands.push(`${tone(color.slate200)} RG ${margin} 36 m ${pageWidth - margin} 36 l S`);
+      commands.push(`${tone(color.slate500)} rg BT /F1 7 Tf ${margin} 23 Td (${escapePdf(footer)}) Tj ET`);
+      commands.push(`${tone(color.slate500)} rg BT /F1 7 Tf ${pageWidth - margin - 48} 23 Td (Page ${index + 1} of ${total}) Tj ET`);
     });
   }
 
-  output() {
-    this.addFooters();
+  output(footer: string) {
+    this.addFooters(footer);
     const objects: string[] = [];
     objects.push('<< /Type /Catalog /Pages 2 0 R >>');
     const kids = this.pages.map((_, index) => `${5 + index * 2} 0 R`).join(' ');
@@ -335,6 +352,30 @@ class PdfDocument {
   }
 }
 
+const triggerDownload = (pdf: string, filename: string) => {
+  const blob = new Blob([pdf], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+};
+
+const statementSummaryItems = (totals: ReturnType<typeof calculateStatementTotals>) => [
+  { label: 'Platform Payouts', value: usd(totals.total_bank_payouts) },
+  { label: 'Store Expenses', value: usd(totals.total_store_expenses) },
+  { label: 'Dealer Share', value: usd(totals.dealer_share_amount) },
+  { label: 'Company Share', value: usd(totals.company_share_amount) },
+  { label: 'Printing Costs', value: usd(totals.total_printing_costs) },
+  { label: 'Shipping Costs', value: usd(totals.total_shipping_costs) },
+  { label: 'Dealer Receivable', value: usd(totals.dealer_receivable_amount), accent: true },
+  { label: 'Paid', value: usd(totals.paid_amount) },
+  { label: 'Remaining', value: usd(totals.remaining_amount), accent: true },
+];
+
 export function downloadStatementPdf({
   dealer,
   statement,
@@ -351,40 +392,29 @@ export function downloadStatementPdf({
   const statementPendingCosts = pendingOrderCosts.filter(
     (cost) => cost.statementId === statement.id || (!cost.statementId && cost.dealerId === dealer.id),
   );
-  const generatedAt = new Date();
+  const generatedAt = new Date().toLocaleDateString();
   const pdf = new PdfDocument();
 
   pdf.header({
     title: 'Dealer Settlement Statement',
     dealerName: dealer.storeName || dealer.name,
-    period: statement.month,
-    generatedDate: generatedAt.toLocaleDateString(),
-    reportingCurrency: 'USD',
-    dealerCurrency: dealer.currency || 'USD',
+    meta: [
+      `Period ${statement.month}`,
+      `Generated ${generatedAt}`,
+      `Reporting USD / Dealer ${dealer.currency || 'USD'}`,
+    ],
   });
 
-  pdf.section('Dealer / Agreement');
-  pdf.infoGrid([
-    { label: 'Dealer', value: dealer.name },
-    { label: 'Store', value: dealer.storeName || dealer.name },
+  pdf.section('Agreement');
+  pdf.compactInfo([
     { label: 'Dealer Share', value: `${(dealer.dealerSharePercentage * 100).toFixed(2)}%` },
     { label: 'Company Share', value: `${(dealer.companySharePercentage * 100).toFixed(2)}%` },
     { label: 'Platform', value: dealer.platform || 'Not set' },
-    { label: 'Default Currency', value: dealer.currency || 'USD' },
+    { label: 'Currency', value: dealer.currency || 'USD' },
   ]);
 
-  pdf.section('Statement Summary', 'Confirmed transactions determine all settlement totals.');
-  pdf.summaryCards([
-    { label: 'Platform Payouts', value: usd(totals.total_bank_payouts) },
-    { label: 'Store Expenses', value: usd(totals.total_store_expenses) },
-    { label: 'Dealer Share', value: usd(totals.dealer_share_amount) },
-    { label: 'Company Share', value: usd(totals.company_share_amount) },
-    { label: 'Printing Costs', value: usd(totals.total_printing_costs) },
-    { label: 'Shipping Costs', value: usd(totals.total_shipping_costs) },
-    { label: 'Dealer Receivable', value: usd(totals.dealer_receivable_amount), accent: true },
-    { label: 'Paid', value: usd(totals.paid_amount) },
-    { label: 'Remaining', value: usd(totals.remaining_amount), accent: true },
-  ]);
+  pdf.section('Summary');
+  pdf.summaryTable(statementSummaryItems(totals));
 
   pdf.section('Transactions');
   if (statementTransactions.length === 0) {
@@ -392,18 +422,18 @@ export function downloadStatementPdf({
   } else {
     pdf.table(
       [
-        { header: 'Date', width: 48 },
-        { header: 'Type', width: 58 },
-        { header: 'Order', width: 42 },
-        { header: 'Original', width: 68, align: 'right' },
-        { header: 'Rate', width: 40, align: 'right' },
-        { header: 'USD', width: 58, align: 'right' },
-        { header: 'Status', width: 50 },
-        { header: 'Description', width: 147 },
+        { header: 'Date', width: 50 },
+        { header: 'Type', width: 72 },
+        { header: 'Order', width: 58 },
+        { header: 'Original', width: 78, align: 'right' },
+        { header: 'Rate', width: 46, align: 'right' },
+        { header: 'USD', width: 68, align: 'right' },
+        { header: 'Status', width: 56 },
+        { header: 'Description', width: 95 },
       ],
       statementTransactions.map((transaction) => [
         transaction.date,
-        formatTransactionType(transaction.type),
+        pdfTransactionType(transaction.type),
         transaction.orderCode || '-',
         money(transaction.originalAmount ?? transaction.amount, transaction.originalCurrency ?? 'USD'),
         formatExchangeRate(transaction.exchangeRateToUsd),
@@ -411,6 +441,24 @@ export function downloadStatementPdf({
         transaction.status,
         transaction.description || '-',
       ]),
+      { fontSize: 6.2, rowPadding: 5 },
+    );
+    pdf.note('Platform Payout means money deposited into the dealer bank account by Etsy, Shopify, or another sales platform.');
+  }
+
+  pdf.section('Pending Order Costs');
+  if (statementPendingCosts.length === 0) {
+    pdf.empty('No pending order cost reminders.');
+  } else {
+    pdf.table(
+      [
+        { header: 'Order ID', width: 88 },
+        { header: 'Scope', width: 78 },
+        { header: 'Status', width: 96 },
+        { header: 'Note', width: 261 },
+      ],
+      statementPendingCosts.map((cost) => [cost.orderCode, cost.costScope, cost.status, cost.note || '-']),
+      { fontSize: 6.5, rowPadding: 5 },
     );
   }
 
@@ -420,10 +468,10 @@ export function downloadStatementPdf({
   } else {
     pdf.table(
       [
-        { header: 'Payment Date', width: 74 },
-        { header: 'Original Payment', width: 110, align: 'right' },
-        { header: 'Applied USD', width: 90, align: 'right' },
-        { header: 'Description', width: 237 },
+        { header: 'Payment Date', width: 80 },
+        { header: 'Original Payment', width: 120, align: 'right' },
+        { header: 'Applied USD', width: 100, align: 'right' },
+        { header: 'Description', width: 223 },
       ],
       statementAllocations.map((allocation) => {
         const payment = paymentsById.get(allocation.paymentId);
@@ -434,36 +482,141 @@ export function downloadStatementPdf({
           payment?.description || '-',
         ];
       }),
+      { fontSize: 6.6, rowPadding: 5 },
+    );
+  }
+
+  triggerDownload(
+    pdf.output('Generated by Dealer Settlement Manager. Based on confirmed transactions.'),
+    `${slug(dealer.storeName || dealer.name)}-${statement.month}-statement.pdf`,
+  );
+}
+
+export function downloadDealerAccountStatementPdf({
+  dealer,
+  statements,
+  transactions,
+  payments,
+  allocations,
+  pendingOrderCosts,
+}: DealerAccountPdfInput) {
+  const dealerStatements = sortStatementsByPeriod(statements.filter((statement) => statement.dealerId === dealer.id));
+  const rows = dealerStatements
+    .map((statement) => {
+      const paid = getEffectiveStatementPaidAmount(statement, allocations);
+      const totals = calculateStatementTotals(statement, transactions, dealer, paid);
+      return { statement, totals };
+    })
+    .filter(({ statement, totals }) =>
+      Math.abs(totals.remaining_amount) > 0.001 ||
+      ['open', 'partially_paid', 'carried_forward'].includes(statement.status),
+    );
+  const dealerPayments = payments.filter((payment) => payment.dealerId === dealer.id);
+  const activePendingCosts = pendingOrderCosts.filter(
+    (cost) => cost.dealerId === dealer.id && ['pending', 'partially_resolved'].includes(cost.status),
+  );
+  const totalPaid = rows.reduce((total, row) => total + row.totals.paid_amount, 0);
+  const totalRemaining = rows.reduce((total, row) => total + row.totals.remaining_amount, 0);
+  const generatedAt = new Date().toLocaleDateString();
+  const pdf = new PdfDocument();
+
+  pdf.header({
+    title: 'Dealer Account Statement',
+    dealerName: dealer.storeName || dealer.name,
+    meta: [
+      `Generated ${generatedAt}`,
+      `Reporting USD / Dealer ${dealer.currency || 'USD'}`,
+      `Agreement ${(dealer.dealerSharePercentage * 100).toFixed(2)}% / ${(dealer.companySharePercentage * 100).toFixed(2)}%`,
+    ],
+  });
+
+  pdf.section('Account Summary');
+  pdf.summaryTable([
+    { label: 'Total Open Balance', value: usd(totalRemaining), accent: true },
+    { label: 'Total Paid', value: usd(totalPaid) },
+    { label: 'Open Statements', value: String(rows.length) },
+    { label: 'Pending Order Costs', value: String(activePendingCosts.length) },
+  ]);
+
+  pdf.section('Open Statements');
+  if (rows.length === 0) {
+    pdf.empty('No open statement balances.');
+  } else {
+    pdf.table(
+      [
+        { header: 'Period', width: 48 },
+        { header: 'Payouts', width: 66, align: 'right' },
+        { header: 'Dealer Share', width: 70, align: 'right' },
+        { header: 'Company', width: 66, align: 'right' },
+        { header: 'Printing', width: 60, align: 'right' },
+        { header: 'Shipping', width: 60, align: 'right' },
+        { header: 'Receivable', width: 74, align: 'right' },
+        { header: 'Paid', width: 38, align: 'right' },
+        { header: 'Remaining', width: 41, align: 'right' },
+      ],
+      rows.map(({ statement, totals }) => [
+        statement.month,
+        usd(totals.total_bank_payouts),
+        usd(totals.dealer_share_amount),
+        usd(totals.company_share_amount),
+        usd(totals.total_printing_costs),
+        usd(totals.total_shipping_costs),
+        usd(totals.dealer_receivable_amount),
+        usd(totals.paid_amount),
+        usd(totals.remaining_amount),
+      ]),
+      { fontSize: 5.8, rowPadding: 5 },
+    );
+    pdf.summaryTable([{ label: 'Total Amount Due', value: usd(totalRemaining), accent: true }]);
+  }
+
+  pdf.section('Payment History');
+  if (dealerPayments.length === 0) {
+    pdf.empty('No dealer payment history.');
+  } else {
+    pdf.table(
+      [
+        { header: 'Date', width: 76 },
+        { header: 'Original Payment', width: 120, align: 'right' },
+        { header: 'Applied USD', width: 92, align: 'right' },
+        { header: 'Description', width: 235 },
+      ],
+      dealerPayments
+        .slice()
+        .sort((a, b) => b.paymentDate.localeCompare(a.paymentDate))
+        .map((payment) => {
+          const applied = allocations
+            .filter((allocation) => allocation.paymentId === payment.id)
+            .reduce((total, allocation) => total + getAllocatedUsdAmount(allocation), 0);
+          return [
+            payment.paymentDate,
+            money(payment.originalAmount ?? payment.amount, payment.originalCurrency ?? payment.currency),
+            usd(applied || getUsdAmount(payment)),
+            payment.description || '-',
+          ];
+        }),
+      { fontSize: 6.4, rowPadding: 5 },
     );
   }
 
   pdf.section('Pending Order Costs');
-  if (statementPendingCosts.length === 0) {
-    pdf.empty('No pending order cost reminders.');
+  if (activePendingCosts.length === 0) {
+    pdf.empty('No active pending order costs.');
   } else {
     pdf.table(
       [
-        { header: 'Order ID', width: 84 },
-        { header: 'Scope', width: 74 },
-        { header: 'Status', width: 88 },
-        { header: 'Note', width: 265 },
+        { header: 'Order ID', width: 88 },
+        { header: 'Scope', width: 78 },
+        { header: 'Status', width: 96 },
+        { header: 'Note', width: 261 },
       ],
-      statementPendingCosts.map((cost) => [
-        cost.orderCode,
-        cost.costScope,
-        cost.status,
-        cost.note || '-',
-      ]),
+      activePendingCosts.map((cost) => [cost.orderCode, cost.costScope, cost.status, cost.note || '-']),
+      { fontSize: 6.5, rowPadding: 5 },
     );
   }
 
-  const blob = new Blob([pdf.output()], { type: 'application/pdf' });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = `${(dealer.storeName || dealer.name).replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-${statement.month}-statement.pdf`;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
+  triggerDownload(
+    pdf.output('This account statement summarizes open dealer settlement balances. Pending order costs do not affect totals until resolved.'),
+    `${slug(dealer.storeName || dealer.name)}-account-statement.pdf`,
+  );
 }
