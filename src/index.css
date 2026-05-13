@@ -3,11 +3,6 @@
 @tailwind utilities;
 
 :root {
-  --psns-navy: #012354;
-  --psns-surface: #e5ebf0;
-  --psns-orange: #ec8237;
-  --psns-coral: #f46033;
-  --psns-white: #ffffff;
   color: #0f172a;
   background: #f8fafc;
   font-family: 'Open Sans', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;

@@ -14,7 +14,7 @@ const accentClass: Record<Tone, string> = {
   indigo: 'from-indigoBrand to-psnsOrange',
   emerald: 'from-emerald-400 to-emerald-600',
   amber: 'from-psnsOrange to-psnsCoral',
-  red: 'from-psnsCoral to-red-700',
+  red: 'from-psnsCoral to-red-600',
   slate: 'from-slate-300 to-slate-500',
 };
 
@@ -144,7 +144,7 @@ export function Button({
   const variantClass = {
     primary: 'bg-indigoBrand text-white border-indigoBrand shadow-sm hover:bg-[#001a40]',
     secondary: 'bg-white text-slate-700 border-slate-300 shadow-sm hover:bg-slate-50',
-    danger: 'bg-white text-psnsCoral border-red-200 shadow-sm hover:bg-red-50',
+    danger: 'bg-white text-red-700 border-red-200 shadow-sm hover:bg-red-50',
   }[variant];
 
   return (

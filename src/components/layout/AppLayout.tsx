@@ -59,8 +59,8 @@ export function AppLayout({
         <aside className="w-72 shrink-0 border-r border-psnsMist bg-white/95 px-4 py-5 shadow-[1px_0_0_rgba(1,35,84,0.04)]">
           <div className="mb-7 rounded-2xl border border-psnsMist bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
             <BrandLogo />
-            <div className="mt-4 rounded-xl border-l-4 border-psnsOrange bg-[#e5ebf0] px-3 py-2 text-xs font-semibold text-indigoBrand ring-1 ring-psnsMist">
-              Settlement · Receivables · Commissions
+            <div className="mt-4 rounded-xl bg-[#e5ebf0] px-3 py-2 text-xs font-medium text-indigoBrand ring-1 ring-psnsMist">
+              Settlement review · receivables · commissions
             </div>
           </div>
 

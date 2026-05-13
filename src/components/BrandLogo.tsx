@@ -3,15 +3,13 @@ export function BrandLogo({ compact = false }: { compact?: boolean }) {
     <div className="flex items-center gap-3">
       <img
         alt="PSNS Reseller CRM"
-        className={compact ? 'h-9 w-auto shrink-0' : 'h-11 w-auto shrink-0'}
+        className={compact ? 'h-9 w-9 shrink-0 rounded-lg object-cover' : 'h-11 w-11 shrink-0 rounded-xl object-cover'}
         src="/psns-logo.svg"
       />
       {!compact && (
         <div>
-          <h1 className="text-base font-bold leading-tight text-indigoBrand">PSNS Reseller CRM</h1>
-          <p className="mt-0.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-            Settlement · Receivables · Commissions
-          </p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Finance Ops</p>
+          <h1 className="text-base font-semibold leading-tight text-slate-950">PSNS Reseller CRM</h1>
         </div>
       )}
     </div>
