@@ -5,16 +5,16 @@ type Tone = 'indigo' | 'emerald' | 'amber' | 'red' | 'slate';
 const toneClass: Record<Tone, string> = {
   indigo: 'bg-slate-50 text-indigoBrand ring-slate-200',
   emerald: 'bg-emerald-50 text-emerald-700 ring-emerald-100',
-  amber: 'bg-amber-50 text-amber-700 ring-amber-100',
-  red: 'bg-red-50 text-red-700 ring-red-100',
-  slate: 'bg-slate-100 text-slate-700 ring-slate-200',
+  amber: 'bg-orange-50 text-psnsOrange ring-orange-100',
+  red: 'bg-red-50 text-psnsCoral ring-red-100',
+  slate: 'bg-slate-100 text-slate-700 ring-psnsMist',
 };
 
 const accentClass: Record<Tone, string> = {
   indigo: 'from-indigoBrand to-psnsOrange',
   emerald: 'from-emerald-400 to-emerald-600',
   amber: 'from-psnsOrange to-psnsCoral',
-  red: 'from-psnsCoral to-red-600',
+  red: 'from-psnsCoral to-red-700',
   slate: 'from-slate-300 to-slate-500',
 };
 
@@ -30,14 +30,14 @@ export function PageHeader({
   action?: ReactNode;
 }) {
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-sm">
+    <div className="relative overflow-hidden rounded-2xl border border-psnsMist bg-white px-5 py-5 shadow-sm">
       <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-indigoBrand via-psnsOrange to-psnsCoral" />
       <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
         <div>
           {eyebrow && (
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-indigoBrand">{eyebrow}</p>
           )}
-          <h2 className="text-2xl font-semibold text-slate-950 mt-1">{title}</h2>
+          <h2 className="text-2xl font-semibold text-indigoBrand mt-1">{title}</h2>
           <p className="text-sm text-slate-500 mt-1 max-w-2xl">{subtitle}</p>
         </div>
         {action}
@@ -89,7 +89,7 @@ export function KpiCard({
   tone?: Tone;
 }) {
   return (
-    <div className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+    <div className="group relative overflow-hidden rounded-2xl border border-psnsMist bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
       <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${accentClass[tone]}`} />
       <div className="flex items-start justify-between gap-3">
         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</p>
@@ -99,7 +99,7 @@ export function KpiCard({
           </span>
         )}
       </div>
-      <p className="mt-4 text-3xl font-semibold tracking-tight text-slate-950">{value}</p>
+      <p className="mt-4 text-3xl font-semibold tracking-tight text-indigoBrand">{value}</p>
       <p className="mt-2 text-xs leading-5 text-slate-500">{helper}</p>
     </div>
   );
@@ -113,7 +113,7 @@ export function EmptyState({
   description?: string;
 }) {
   return (
-    <div className="m-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-5 py-6 text-sm">
+    <div className="m-4 rounded-xl border border-dashed border-psnsMist bg-slate-50 px-5 py-6 text-sm">
       <p className="font-medium text-slate-800">{title}</p>
       {description && <p className="text-slate-500 mt-1">{description}</p>}
     </div>
@@ -122,8 +122,8 @@ export function EmptyState({
 
 export function DataTable({ children }: { children: ReactNode }) {
   return (
-    <div className="max-w-full overflow-x-auto overscroll-x-contain">
-      <table className="min-w-full border-separate border-spacing-0 text-sm">{children}</table>
+    <div className="max-w-full overflow-x-auto overscroll-x-contain lg:overflow-x-visible">
+      <table className="w-full border-separate border-spacing-0 text-sm">{children}</table>
     </div>
   );
 }
@@ -144,7 +144,7 @@ export function Button({
   const variantClass = {
     primary: 'bg-indigoBrand text-white border-indigoBrand shadow-sm hover:bg-[#001a40]',
     secondary: 'bg-white text-slate-700 border-slate-300 shadow-sm hover:bg-slate-50',
-    danger: 'bg-white text-red-700 border-red-200 shadow-sm hover:bg-red-50',
+    danger: 'bg-white text-psnsCoral border-red-200 shadow-sm hover:bg-red-50',
   }[variant];
 
   return (

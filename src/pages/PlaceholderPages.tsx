@@ -390,14 +390,14 @@ function CommissionBreakdownTable({
         <DataTable>
           <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="px-4 py-3 whitespace-nowrap">Store</th>
-              <th className="px-4 py-3 whitespace-nowrap">Period</th>
-              <th className="px-4 py-3 text-right whitespace-nowrap">Commission Base</th>
-              <th className="px-4 py-3 text-right whitespace-nowrap">Rate</th>
-              <th className="px-4 py-3 text-right whitespace-nowrap">Commission</th>
-              <th className="px-4 py-3 text-right whitespace-nowrap">Paid</th>
-              <th className="px-4 py-3 text-right whitespace-nowrap">Remaining</th>
-              <th className="px-4 py-3 whitespace-nowrap">Status</th>
+              <th className="px-3 py-3">Store</th>
+              <th className="whitespace-nowrap px-3 py-3">Period</th>
+              <th className="px-3 py-3 text-right">Commission Base</th>
+              <th className="whitespace-nowrap px-3 py-3 text-right">Rate</th>
+              <th className="px-3 py-3 text-right">Commission</th>
+              <th className="whitespace-nowrap px-3 py-3 text-right">Paid</th>
+              <th className="whitespace-nowrap px-3 py-3 text-right">Remaining</th>
+              <th className="whitespace-nowrap px-3 py-3">Status</th>
             </tr>
           </thead>
           <tbody>
@@ -415,11 +415,11 @@ function CommissionBreakdownTable({
                       : 'border-t border-slate-100 transition hover:bg-slate-50'
                   }
                 >
-                  <td className="px-4 py-3 font-medium text-slate-950 whitespace-nowrap">
+                  <td className="min-w-0 px-3 py-3 font-medium text-slate-950">
                     {getCommissionDealerName(commission, dealers)}
                   </td>
-                  <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{formatCommissionPeriod(commission)}</td>
-                  <td className="px-4 py-3 text-right font-semibold text-slate-950 whitespace-nowrap">
+                  <td className="whitespace-nowrap px-3 py-3 text-slate-600">{formatCommissionPeriod(commission)}</td>
+                  <td className="px-3 py-3 text-right font-semibold text-slate-950">
                     {formatUsd(commission.commissionBase)}
                     <p className="mt-1 text-xs font-normal leading-5 text-slate-500 whitespace-normal">
                       Company {formatUsd(commission.companyShareAmount)} · Printing {formatUsd(commission.printingCosts)} ·
@@ -429,14 +429,14 @@ function CommissionBreakdownTable({
                         : ''}
                     </p>
                   </td>
-                  <td className="px-4 py-3 text-right text-slate-700 whitespace-nowrap">{formatCommissionRate(commission.commissionRate)}</td>
-                  <td className="px-4 py-3 text-right font-semibold text-slate-950 whitespace-nowrap">
+                  <td className="whitespace-nowrap px-3 py-3 text-right text-slate-700">{formatCommissionRate(commission.commissionRate)}</td>
+                  <td className="px-3 py-3 text-right font-semibold text-slate-950">
                     {formatUsd(commission.commissionAmount)}
                     {zeroNote && <p className="mt-1 text-xs font-medium text-amber-700 whitespace-normal">{zeroNote}</p>}
                   </td>
-                  <td className="px-4 py-3 text-right text-emerald-700 font-semibold whitespace-nowrap">{formatUsd(paid)}</td>
-                  <td className="px-4 py-3 text-right font-semibold text-slate-950 whitespace-nowrap">{formatUsd(remaining)}</td>
-                  <td className="px-4 py-3 whitespace-nowrap">
+                  <td className="whitespace-nowrap px-3 py-3 text-right text-emerald-700 font-semibold">{formatUsd(paid)}</td>
+                  <td className="whitespace-nowrap px-3 py-3 text-right font-semibold text-slate-950">{formatUsd(remaining)}</td>
+                  <td className="whitespace-nowrap px-3 py-3">
                     <StatusBadge status={commission.status} />
                   </td>
                 </tr>
@@ -869,46 +869,53 @@ function PendingOrderCostsPanel({
         {rows.length === 0 ? (
           <EmptyState title={filter === 'active' ? 'No unresolved order costs.' : 'No pending order costs match this filter.'} />
         ) : (
-          <DataTable>
-            <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="min-w-28 whitespace-nowrap px-4 py-3">Order ID</th>
-                <th className="min-w-24 whitespace-nowrap px-4 py-3">Scope</th>
-                <th className="min-w-36 whitespace-nowrap px-4 py-3">Estimated Cost</th>
-                <th className="min-w-32 whitespace-nowrap px-4 py-3">Final Cost</th>
-                <th className="min-w-32 whitespace-nowrap px-4 py-3">Status</th>
-                <th className="min-w-64 px-4 py-3">Note</th>
-                <th className="min-w-28 whitespace-nowrap px-4 py-3">Created</th>
-                <th className="min-w-44 whitespace-nowrap px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((cost) => (
-                <tr key={cost.id} className="border-t border-slate-100 transition hover:bg-slate-50">
-                  <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-950">{cost.orderCode}</td>
-                  <td className="whitespace-nowrap px-4 py-3 capitalize">{cost.costScope}</td>
-                  <td className="whitespace-nowrap px-4 py-3">{formatOptionalCost(cost.estimatedPrintingCost, cost.estimatedShippingCost, cost.currency)}</td>
-                  <td className="whitespace-nowrap px-4 py-3">{formatOptionalCost(cost.finalPrintingCost, cost.finalShippingCost, cost.currency)}</td>
-                  <td className="whitespace-nowrap px-4 py-3"><StatusBadge status={cost.status} /></td>
-                  <td className="px-4 py-3 text-slate-600">{cost.note || '-'}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-slate-600">{cost.createdAt.slice(0, 10)}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-right">
-                    {role === 'admin' && (
-                      <div className="flex justify-end gap-2">
-                        <Button onClick={() => openEdit(cost)}>Edit</Button>
-                        {['pending', 'partially_resolved'].includes(cost.status) && (
-                          <>
-                            <Button variant="primary" onClick={() => openResolve(cost)}>Resolve</Button>
-                            <Button variant="danger" onClick={() => cancelCost(cost)}>Cancel</Button>
-                          </>
-                        )}
+          <div className="space-y-3 p-5">
+            {rows.map((cost) => (
+              <div key={cost.id} className="rounded-xl border border-orange-100 bg-white p-4 shadow-sm">
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-semibold text-indigoBrand">{cost.orderCode}</p>
+                      <span className="rounded-full bg-orange-50 px-2.5 py-1 text-[11px] font-semibold capitalize text-psnsOrange ring-1 ring-orange-100">
+                        {cost.costScope}
+                      </span>
+                      <StatusBadge status={cost.status} />
+                      <span className="text-xs text-slate-500">{cost.createdAt.slice(0, 10)}</span>
+                    </div>
+                    <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Estimated</p>
+                        <p className="mt-1 font-medium text-slate-900">
+                          {formatOptionalCost(cost.estimatedPrintingCost, cost.estimatedShippingCost, cost.currency)}
+                        </p>
                       </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </DataTable>
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Final</p>
+                        <p className="mt-1 font-medium text-slate-900">
+                          {formatOptionalCost(cost.finalPrintingCost, cost.finalShippingCost, cost.currency)}
+                        </p>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Note</p>
+                        <p className="mt-1 break-words text-slate-600">{cost.note || '-'}</p>
+                      </div>
+                    </div>
+                  </div>
+                  {role === 'admin' && (
+                    <div className="flex shrink-0 flex-wrap gap-2 xl:justify-end">
+                      <Button onClick={() => openEdit(cost)}>Edit</Button>
+                      {['pending', 'partially_resolved'].includes(cost.status) && (
+                        <>
+                          <Button variant="primary" onClick={() => openResolve(cost)}>Resolve</Button>
+                          <Button variant="danger" onClick={() => cancelCost(cost)}>Cancel</Button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
         )}
         <div className="border-t border-orange-100 bg-[#fffaf5] px-5 py-3 text-xs text-slate-600">
           Pending costs are reminders only. They are not included in current amount due and change statement totals only after resolving into real printing or shipping transactions.
@@ -2511,13 +2518,13 @@ export function StatementDetailPage({
         <DataTable>
           <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="w-28 whitespace-nowrap px-4 py-3">Date</th>
-              <th className="w-48 whitespace-nowrap px-4 py-3">Type</th>
-              <th className="w-36 whitespace-nowrap px-4 py-3">Status</th>
-              <th className="w-48 whitespace-nowrap px-4 py-3 text-right">Amount</th>
-              <th className="min-w-64 px-4 py-3">Order / Description</th>
+              <th className="w-24 whitespace-nowrap px-3 py-3">Date</th>
+              <th className="w-36 px-3 py-3">Type</th>
+              <th className="w-28 whitespace-nowrap px-3 py-3">Status</th>
+              <th className="w-40 whitespace-nowrap px-3 py-3 text-right">Amount</th>
+              <th className="px-3 py-3">Order / Description</th>
               {(role === 'admin' || editTransactionStoreIds.includes(dealer.storeId) || deleteTransactionStoreIds.includes(dealer.storeId)) && (
-                <th className="w-36 whitespace-nowrap px-4 py-3 text-right">Actions</th>
+                <th className="w-32 whitespace-nowrap px-3 py-3 text-right">Actions</th>
               )}
             </tr>
           </thead>
@@ -2533,24 +2540,24 @@ export function StatementDetailPage({
                       : 'bg-amber-50/70 text-amber-900'
                 }`}
               >
-                <td className="whitespace-nowrap px-4 py-3">{transaction.date}</td>
-                <td className="whitespace-nowrap px-4 py-3 font-medium">{formatTransactionType(transaction.type)}</td>
-                <td className="whitespace-nowrap px-4 py-3">
+                <td className="whitespace-nowrap px-3 py-3">{transaction.date}</td>
+                <td className="px-3 py-3 font-medium">{formatTransactionType(transaction.type)}</td>
+                <td className="whitespace-nowrap px-3 py-3">
                   <StatusBadge status={transaction.status} />
                 </td>
-                <td className="whitespace-nowrap px-4 py-3 text-right">
+                <td className="whitespace-nowrap px-3 py-3 text-right">
                   <p className="font-semibold text-slate-950">{formatUsd(transaction.usdAmount ?? transaction.amount)}</p>
                   <p className="mt-1 text-xs text-slate-500">
                     {formatOriginalMoney(transaction)} @ {formatExchangeRate(transaction.exchangeRateToUsd)}
                   </p>
                 </td>
-                <td className="px-4 py-3">
+                <td className="min-w-0 px-3 py-3">
                   <p className="font-medium text-slate-900">{transaction.orderCode || '-'}</p>
-                  <p className="mt-1 text-xs text-slate-500">{transaction.description || '-'}</p>
+                  <p className="mt-1 break-words text-xs text-slate-500">{transaction.description || '-'}</p>
                 </td>
                 {(role === 'admin' || canEditTransaction(transaction) || canDeleteTransaction(transaction)) && (
-                  <td className="whitespace-nowrap px-4 py-3 text-right">
-                    <div className="flex justify-end gap-2">
+                  <td className="px-3 py-3 text-right">
+                    <div className="flex flex-wrap justify-end gap-2">
                       {canEditTransaction(transaction) && (
                         <Button onClick={() => openTransactionEditor(transaction)}>
                           Edit
@@ -2975,7 +2982,7 @@ export function TransactionsPage({
           <DataTable>
             <thead className="bg-amber-50/80 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-4 py-3">
+                <th className="w-10 px-3 py-3">
                   <input
                     aria-label="Select all pending transactions"
                     type="checkbox"
@@ -2984,18 +2991,18 @@ export function TransactionsPage({
                     onChange={toggleAllVisiblePending}
                   />
                 </th>
-                <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3">Dealer</th>
-                <th className="px-4 py-3">Type</th>
-                <th className="px-4 py-3 text-right">Amount</th>
-                <th className="px-4 py-3">Submitted By</th>
-                <th className="px-4 py-3 text-right">Actions</th>
+                <th className="whitespace-nowrap px-3 py-3">Date</th>
+                <th className="px-3 py-3">Dealer</th>
+                <th className="px-3 py-3">Type</th>
+                <th className="whitespace-nowrap px-3 py-3 text-right">Amount</th>
+                <th className="whitespace-nowrap px-3 py-3">Submitted By</th>
+                <th className="w-40 px-3 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {pendingRows.map((transaction) => (
                 <tr key={transaction.id} className="border-t border-amber-100 bg-amber-50/50">
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-3">
                     <input
                       aria-label={`Select pending transaction ${transaction.id}`}
                       type="checkbox"
@@ -3004,18 +3011,18 @@ export function TransactionsPage({
                       onChange={() => togglePendingSelection(transaction.id)}
                     />
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3">{transaction.date}</td>
-                  <td className="px-4 py-3 font-medium text-slate-950">{dealers.find((dealer) => dealer.id === transaction.dealerId)?.name}</td>
-                  <td className="whitespace-nowrap px-4 py-3">{formatTransactionType(transaction.type)}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-right">
+                  <td className="whitespace-nowrap px-3 py-3">{transaction.date}</td>
+                  <td className="px-3 py-3 font-medium text-slate-950">{dealers.find((dealer) => dealer.id === transaction.dealerId)?.name}</td>
+                  <td className="px-3 py-3">{formatTransactionType(transaction.type)}</td>
+                  <td className="whitespace-nowrap px-3 py-3 text-right">
                     <p className="font-semibold text-slate-950">{formatUsd(transaction.usdAmount ?? transaction.amount)}</p>
                     <p className="mt-1 text-xs text-slate-500">
                       {formatOriginalMoney(transaction)} @ {formatExchangeRate(transaction.exchangeRateToUsd)}
                     </p>
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3">{transaction.createdByRole || 'admin'}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-right">
-                    <div className="flex justify-end gap-2">
+                  <td className="whitespace-nowrap px-3 py-3">{transaction.createdByRole || 'admin'}</td>
+                  <td className="px-3 py-3 text-right">
+                    <div className="flex flex-wrap justify-end gap-2">
                       <Button variant="primary" onClick={() => updateStatus(transaction.id, 'confirmed')}>
                         Approve
                       </Button>
@@ -3061,13 +3068,13 @@ export function TransactionsPage({
           <DataTable>
             <thead className="bg-slate-100/70 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                {role === 'admin' && <th className="px-4 py-3">Select</th>}
-                <th className="px-4 py-3">Dealer</th>
-                <th className="px-4 py-3">Type</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Amount</th>
-                <th className="px-4 py-3">Order</th>
-                <th className="px-4 py-3 text-right">Actions</th>
+                {role === 'admin' && <th className="w-10 px-3 py-3">Select</th>}
+                <th className="px-3 py-3">Dealer</th>
+                <th className="px-3 py-3">Type</th>
+                <th className="whitespace-nowrap px-3 py-3">Status</th>
+                <th className="whitespace-nowrap px-3 py-3 text-right">Amount</th>
+                <th className="whitespace-nowrap px-3 py-3">Order</th>
+                <th className="w-40 px-3 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -3083,7 +3090,7 @@ export function TransactionsPage({
                   }`}
                 >
                   {role === 'admin' && (
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       {transaction.status === 'pending_review' ? (
                         <input
                           aria-label={`Select transaction ${transaction.id}`}
@@ -3097,21 +3104,21 @@ export function TransactionsPage({
                       )}
                     </td>
                   )}
-                  <td className="px-4 py-3 font-medium text-slate-950">{dealers.find((dealer) => dealer.id === transaction.dealerId)?.name}</td>
-                  <td className="whitespace-nowrap px-4 py-3">{formatTransactionType(transaction.type)}</td>
-                  <td className="whitespace-nowrap px-4 py-3">
+                  <td className="px-3 py-3 font-medium text-slate-950">{dealers.find((dealer) => dealer.id === transaction.dealerId)?.name}</td>
+                  <td className="px-3 py-3">{formatTransactionType(transaction.type)}</td>
+                  <td className="whitespace-nowrap px-3 py-3">
                     <StatusBadge status={transaction.status} />
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-right">
+                  <td className="whitespace-nowrap px-3 py-3 text-right">
                     <p className="font-semibold text-slate-950">{formatUsd(transaction.usdAmount ?? transaction.amount)}</p>
                     <p className="mt-1 text-xs text-slate-500">
                       {formatOriginalMoney(transaction)} @ {formatExchangeRate(transaction.exchangeRateToUsd)}
                     </p>
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3">{transaction.orderCode || '-'}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-right">
+                  <td className="whitespace-nowrap px-3 py-3">{transaction.orderCode || '-'}</td>
+                  <td className="px-3 py-3 text-right">
                     {role === 'admin' && (
-                      <div className="flex justify-end gap-2">
+                      <div className="flex flex-wrap justify-end gap-2">
                         {transaction.status === 'pending_review' && (
                           <>
                             <Button variant="primary" onClick={() => updateStatus(transaction.id, 'confirmed')}>

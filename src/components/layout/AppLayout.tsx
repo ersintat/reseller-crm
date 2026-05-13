@@ -54,12 +54,12 @@ export function AppLayout({
     .join('');
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
+    <div className="min-h-screen overflow-x-hidden bg-slate-50 text-slate-900">
       <div className="flex min-h-screen">
         <aside className="w-72 shrink-0 border-r border-psnsMist bg-white/95 px-4 py-5 shadow-[1px_0_0_rgba(1,35,84,0.04)]">
           <div className="mb-7 rounded-2xl border border-psnsMist bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
             <BrandLogo />
-            <div className="mt-4 rounded-xl bg-[#e5ebf0] px-3 py-2 text-xs font-medium text-indigoBrand ring-1 ring-psnsMist">
+            <div className="mt-4 rounded-xl border-l-4 border-psnsOrange bg-[#e5ebf0] px-3 py-2 text-xs font-medium text-indigoBrand ring-1 ring-psnsMist">
               Settlement review · receivables · commissions
             </div>
           </div>
@@ -76,7 +76,7 @@ export function AppLayout({
                     [
                       'group flex items-center gap-3 rounded-xl border px-3 py-2.5 text-sm font-medium transition',
                       isActive
-                        ? 'border-[#d8e0e8] bg-[#e5ebf0] text-indigoBrand shadow-sm'
+                        ? 'border-psnsMist bg-[#e5ebf0] text-indigoBrand shadow-sm'
                         : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-950',
                     ].join(' ')
                   }
