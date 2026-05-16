@@ -26,6 +26,7 @@ import {
   allocateDealerPaymentFIFO,
   calculateStatementTotals,
   generateEmployeeCommissionsForStatement,
+  getAllocatedUsdAmount,
   getCommissionPreviewsForStatement,
   getCurrentMonthEmployeeCommission,
   getCurrentMonthReceivable,
@@ -575,6 +576,95 @@ function getPaymentSecondary(payment: DealerPayment | undefined, currency: Suppo
   const targetRate = getStoredTargetCurrencyRate([payment], currency);
   const amount = estimateRowInDealerCurrency(payment, currency, targetRate);
   return { amount: amount ?? 0, hasEstimate: amount !== null };
+}
+
+function getPaymentAllocationSecondary(
+  allocation: DealerPaymentAllocation,
+  payment: DealerPayment | undefined,
+  currency: SupportedCurrency,
+  fallbackRateToUsd: number | null,
+) {
+  if (!payment) {
+    return fallbackRateToUsd && fallbackRateToUsd > 0
+      ? getAllocatedUsdAmount(allocation) / fallbackRateToUsd
+      : null;
+  }
+
+  const paymentUsdAmount = getUsdEquivalent(payment);
+  const paymentSecondary = estimateRowInDealerCurrency(payment, currency, fallbackRateToUsd);
+
+  if (paymentSecondary !== null && paymentUsdAmount > 0) {
+    return paymentSecondary * (getAllocatedUsdAmount(allocation) / paymentUsdAmount);
+  }
+
+  return fallbackRateToUsd && fallbackRateToUsd > 0
+    ? getAllocatedUsdAmount(allocation) / fallbackRateToUsd
+    : null;
+}
+
+function getDealerOpenBalanceSecondary({
+  dealer,
+  statements,
+  transactions,
+  payments,
+  allocations,
+  currency,
+  openBalanceUsd,
+}: {
+  dealer: Dealer;
+  statements: Statement[];
+  transactions: SettlementTransaction[];
+  payments: DealerPayment[];
+  allocations: DealerPaymentAllocation[];
+  currency: SupportedCurrency;
+  openBalanceUsd: number;
+}) {
+  if (Math.abs(openBalanceUsd) < 0.001) return { amount: 0, hasEstimate: true };
+
+  const dealerTransactions = transactions.filter(
+    (transaction) => transaction.dealerId === dealer.id && transaction.status === 'confirmed',
+  );
+  const dealerPayments = payments.filter((payment) => payment.dealerId === dealer.id);
+  const fallbackRateToUsd = getStoredTargetCurrencyRate([...dealerTransactions, ...dealerPayments], currency);
+  const paymentsById = new Map(dealerPayments.map((payment) => [payment.id, payment]));
+
+  return statements
+    .filter((statement) => statement.dealerId === dealer.id)
+    .reduce(
+      (summary, statement) => {
+        const paidUsd = getEffectiveStatementPaidAmount(statement, allocations);
+        const totals = calculateStatementTotals(statement, transactions, dealer, paidUsd);
+        if (Math.abs(totals.remaining_amount) < 0.001) return summary;
+
+        const originalTotals = calculateOriginalStatementTotals(statement, dealer, transactions, currency);
+        const receivableSecondary =
+          originalTotals && originalTotals.hasEstimate
+            ? originalTotals.dealerReceivable
+            : fallbackRateToUsd && fallbackRateToUsd > 0
+              ? totals.dealer_receivable_amount / fallbackRateToUsd
+              : null;
+
+        if (receivableSecondary === null) return summary;
+
+        const paidSecondary = allocations
+          .filter((allocation) => allocation.statementId === statement.id)
+          .reduce((total, allocation) => {
+            const allocationSecondary = getPaymentAllocationSecondary(
+              allocation,
+              paymentsById.get(allocation.paymentId),
+              currency,
+              fallbackRateToUsd,
+            );
+            return total + (allocationSecondary ?? 0);
+          }, 0);
+
+        return {
+          amount: summary.amount + receivableSecondary - paidSecondary,
+          hasEstimate: true,
+        };
+      },
+      { amount: 0, hasEstimate: false },
+    );
 }
 
 function InfoCallout({ children }: { children: React.ReactNode }) {
@@ -1234,6 +1324,9 @@ export function DealerProfilePage({
     statements.filter((statement) => statement.dealerId === dealer.id),
   );
   const dealerPendingOrderCosts = pendingOrderCosts.filter((cost) => cost.dealerId === dealer.id);
+  const activePendingOrderCosts = dealerPendingOrderCosts.filter((cost) =>
+    ['pending', 'partially_resolved'].includes(cost.status),
+  );
   const currentMonthStatement = dealerStatements.find(
     (statement) => statement.month === new Date().toISOString().slice(0, 7),
   );
@@ -1266,12 +1359,6 @@ export function DealerProfilePage({
         calculateOriginalStatementTotals(statement, dealer, transactions, dealerSecondaryCurrency),
       )
     : [];
-  const secondaryReceivableTotal = dealerSecondaryCurrency && secondaryStatementTotals.length > 0
-    ? {
-        amount: secondaryStatementTotals.reduce((total, row) => total + (row?.dealerReceivable ?? 0), 0),
-        hasEstimate: secondaryStatementTotals.some((row) => row?.hasEstimate),
-      }
-    : null;
   const secondaryDealerRetainedShare = dealerSecondaryCurrency && secondaryStatementTotals.length > 0
     ? {
         amount: secondaryStatementTotals.reduce((total, row) => total + (row?.dealerShare ?? 0), 0),
@@ -1286,13 +1373,23 @@ export function DealerProfilePage({
       })()
     : null;
   const secondaryPaid = dealerSecondaryCurrency ? getDealerPaymentSecondary(dealerPayments, dealerSecondaryCurrency) : null;
-  const secondaryOpenBalance = dealerSecondaryCurrency && secondaryReceivableTotal && secondaryPaid
-    ? {
-        amount: secondaryReceivableTotal.amount - secondaryPaid.amount,
-        hasEstimate: secondaryReceivableTotal.hasEstimate || secondaryPaid.hasEstimate,
-      }
-    : secondaryReceivableTotal;
+  const secondaryOpenBalance = dealerSecondaryCurrency
+    ? getDealerOpenBalanceSecondary({
+        dealer,
+        statements: dealerStatements,
+        transactions,
+        payments,
+        allocations,
+        currency: dealerSecondaryCurrency,
+        openBalanceUsd: openBalance,
+      })
+    : null;
   const secondaryLastPayment = dealerSecondaryCurrency ? getPaymentSecondary(lastPayment, dealerSecondaryCurrency) : null;
+  const openBalanceSecondaryText = Math.abs(openBalance) < 0.001
+    ? 'Fully paid'
+    : dealerSecondaryCurrency
+      ? secondaryText(secondaryOpenBalance, dealerSecondaryCurrency, openBalance)
+      : undefined;
   const paymentUsdPreview = calculateUsdPreview(payForm.amount, payForm.currency, payForm.exchangeRateToUsd);
   const suggestedPaymentAmount = Math.max(openBalance, 0);
   let running = 0;
@@ -1518,40 +1615,64 @@ export function DealerProfilePage({
     <PageShell title="Dealer Profile" subtitle={`${dealer.name} account overview and settlement ledger`}>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
         <SummaryCard
-          label="Open Balance"
+          label="Net Open Balance"
           value={formatUsd(openBalance)}
-          secondary={dealerSecondaryCurrency ? secondaryText(secondaryOpenBalance, dealerSecondaryCurrency, openBalance) : undefined}
+          secondary={openBalanceSecondaryText}
           helper={
             balanceSummary.dealerCredit > 0
               ? `Gross receivable ${formatUsd(balanceSummary.grossReceivable)} minus ${formatUsd(balanceSummary.dealerCredit)} dealer credit.`
-              : 'Net sum of statement remaining amounts.'
+              : 'Unpaid balance after payments and credits.'
           }
         />
         <SummaryCard
-          label="Current Month Receivable"
+          label="Current Period Receivable"
           value={formatUsd(currentMonthReceivable)}
           secondary={dealerSecondaryCurrency ? secondaryText(secondaryCurrentReceivable, dealerSecondaryCurrency, currentMonthReceivable) : undefined}
-          helper="Current period: April 2026."
+          helper="Generated for the current statement period."
         />
         <SummaryCard
           label="Dealer Retained Share"
           value={formatUsd(dealerRetainedShare)}
           secondary={dealerSecondaryCurrency ? secondaryText(secondaryDealerRetainedShare, dealerSecondaryCurrency, dealerRetainedShare) : undefined}
-          helper="Dealer portion based on the agreement share."
+          helper="Dealer portion from statement activity. Not an amount due."
         />
         <SummaryCard
-          label="Total Paid"
+          label="Total Collected"
           value={formatUsd(totalPaid)}
           secondary={dealerSecondaryCurrency ? secondaryText(secondaryPaid, dealerSecondaryCurrency, totalPaid) : undefined}
-          helper="Seed paid amount plus allocated payments."
+          helper="Payments received from this dealer."
         />
         <SummaryCard
           label="Last Payment"
           value={lastPayment ? formatUsd(lastPayment.amount) : formatUsd(0)}
           secondary={dealerSecondaryCurrency ? secondaryText(secondaryLastPayment, dealerSecondaryCurrency, lastPayment?.amount ?? 0) : undefined}
-          helper={lastPayment ? lastPayment.paymentDate : 'No recorded dealer payment.'}
+          helper={lastPayment ? `Received on ${lastPayment.paymentDate}` : 'No recorded dealer payment.'}
         />
       </div>
+
+      {activePendingOrderCosts.length > 0 && (
+        <div className="rounded-2xl border border-psnsOrange bg-[#fff7ed] px-5 py-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-psnsCoral">
+                Pending Order Costs
+              </p>
+              <p className="mt-1 text-sm font-semibold text-indigoBrand">
+                {activePendingOrderCosts.length} unresolved item{activePendingOrderCosts.length === 1 ? '' : 's'}
+              </p>
+              <p className="mt-1 text-sm text-slate-700">
+                Not included in amount due. Will affect future statement totals after resolution.
+              </p>
+            </div>
+            <a
+              className="inline-flex h-9 items-center justify-center rounded-lg border border-psnsOrange bg-white px-3.5 text-sm font-semibold text-indigoBrand shadow-sm transition hover:bg-[#fff2e6]"
+              href="#pending-order-costs"
+            >
+              Review Pending Costs
+            </a>
+          </div>
+        </div>
+      )}
 
       <SectionCard
         title="Agreement"
