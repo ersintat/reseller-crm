@@ -1,4 +1,5 @@
 import { Dealer, Employee, SettlementTransaction, Statement, Store } from '../types';
+import { formatUsdAmount } from '../lib/displayLabels';
 
 export const stores: Store[] = [
   { id: 's1', name: 'World of Wedding Co.' }, { id: 's2', name: 'Venture Invitations' }, { id: 's3', name: 'Nueva Invitations' },
@@ -46,4 +47,4 @@ export const employees: Employee[] = [
     ],
   },
 ];
-export const formatUsd = (amount: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+export const formatUsd = formatUsdAmount;

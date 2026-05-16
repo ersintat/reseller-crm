@@ -7,7 +7,6 @@ import { SectionCard } from '../components/ui/Primitives';
 import { PageShell } from './Shared';
 
 const formatPercent = (value: number) => `${(value * 100).toFixed(1).replace(/\.0$/, '')}%`;
-const normalizeDisplayMoney = (amount: number) => (Math.abs(amount) <= 0.01 ? 0 : amount);
 
 export function DealersPage({ dealers, statements, transactions, allocations, storeIds }: { dealers: Dealer[]; statements: Statement[]; transactions: SettlementTransaction[]; allocations: any[]; storeIds?: string[] }) {
   const visible = storeIds ? dealers.filter((d) => storeIds.includes(d.storeId)) : dealers;
@@ -23,8 +22,8 @@ export function DealersPage({ dealers, statements, transactions, allocations, st
                 key={dealer.id}
                 className="rounded-2xl border border-psnsMist bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow-md"
               >
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="min-w-0">
+                <div className="grid gap-4 lg:grid-cols-[minmax(220px,1fr)_minmax(440px,560px)_88px] lg:items-stretch">
+                  <div className="flex min-w-0 flex-col justify-center">
                     <div className="flex flex-wrap items-center gap-2">
                       <Link className="text-base font-semibold text-indigoBrand hover:text-psnsOrange" to={`/dealers/${dealer.id}`}>
                         {dealer.name}
@@ -36,25 +35,25 @@ export function DealersPage({ dealers, statements, transactions, allocations, st
                       {dealer.platform || 'No platform set'} · {dealer.currency || 'USD'} default currency
                     </p>
                   </div>
-                  <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[560px]">
-                    <div className="rounded-xl bg-slate-50 px-3 py-2 ring-1 ring-psnsMist">
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="flex min-h-[76px] flex-col justify-between rounded-xl bg-slate-50 px-3.5 py-3 ring-1 ring-psnsMist">
                       <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Dealer Share</p>
                       <p className="mt-1 text-sm font-semibold text-slate-950">{formatPercent(dealer.dealerSharePercentage)}</p>
                     </div>
-                    <div className="rounded-xl bg-slate-50 px-3 py-2 ring-1 ring-psnsMist">
+                    <div className="flex min-h-[76px] flex-col justify-between rounded-xl bg-slate-50 px-3.5 py-3 ring-1 ring-psnsMist">
                       <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Company Share</p>
                       <p className="mt-1 text-sm font-semibold text-slate-950">{formatPercent(dealer.companySharePercentage)}</p>
                     </div>
-                    <div className="rounded-xl bg-slate-50 px-3 py-2 text-right ring-1 ring-psnsMist">
+                    <div className="flex min-h-[76px] flex-col justify-between rounded-xl bg-slate-50 px-3.5 py-3 text-right ring-1 ring-psnsMist">
                       <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Open Balance</p>
                       <p className="mt-1 text-sm font-semibold text-indigoBrand">
-                        {formatUsd(normalizeDisplayMoney(balance.netOpenBalance))}
+                        {formatUsd(balance.netOpenBalance)}
                       </p>
                     </div>
                   </div>
-                  <div className="flex shrink-0 justify-start lg:justify-end">
+                  <div className="flex items-center justify-start lg:justify-end">
                     <Link
-                      className="inline-flex h-9 items-center justify-center rounded-lg border border-psnsMist bg-white px-3.5 text-sm font-semibold text-indigoBrand shadow-sm transition hover:bg-slate-50"
+                      className="inline-flex h-9 w-full items-center justify-center rounded-lg border border-psnsMist bg-white px-3.5 text-sm font-semibold text-indigoBrand shadow-sm transition hover:bg-slate-50 sm:w-auto lg:w-[72px]"
                       to={`/dealers/${dealer.id}`}
                     >
                       View

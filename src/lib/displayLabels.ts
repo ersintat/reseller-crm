@@ -28,13 +28,18 @@ const usdFormatter = new Intl.NumberFormat('en-US', {
   currency: 'USD',
 });
 
+export const MONEY_DISPLAY_TOLERANCE = 0.01;
+
+export const normalizeMoneyDisplay = (amount: number) =>
+  Math.abs(amount) <= MONEY_DISPLAY_TOLERANCE ? 0 : amount;
+
 export const roundUsdAmount = (value: number) =>
   Math.round((value + Number.EPSILON) * 100) / 100;
 
 export const formatCurrencyAmount = (amount: number, currency: string) =>
   `${currency} ${decimalFormatter.format(amount)}`;
 
-export const formatUsdAmount = (amount: number) => usdFormatter.format(amount);
+export const formatUsdAmount = (amount: number) => usdFormatter.format(normalizeMoneyDisplay(amount));
 
 export const getMoneyOriginalAmount = (row: MoneyInUsd) => row.originalAmount ?? row.amount;
 

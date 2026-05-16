@@ -18,7 +18,6 @@ import {
   getCurrentMonthEmployeeCommission,
   getCurrentMonthReceivable,
   getDashboardTotals,
-  getDealerBalanceSummary,
   getDealerOpenBalance,
   getEffectiveStatementPaidAmount,
   getEmployeeOpenCommissionBalance,
@@ -187,7 +186,6 @@ export function DashboardPage({
       dealer,
       storeName: dealer.storeName || stores.find((store) => store.id === dealer.storeId)?.name || dealer.storeId,
       openBalance: getDealerOpenBalance(dealer.id, statements, transactions, dealers, allocations),
-      balanceSummary: getDealerBalanceSummary(dealer.id, statements, transactions, dealers, allocations),
       currentMonthReceivable: getCurrentMonthReceivable(
         dealer.id,
         statements,
@@ -276,7 +274,7 @@ export function DashboardPage({
         <KpiCard
           label="Dealer Open Balance"
           value={formatUsd(totals.openBalance)}
-          helper="Net unpaid dealer receivables, including dealer credits."
+          helper="Net unpaid dealer receivables."
           context={`${dealerRows.filter((row) => row.openBalance > 0).length} active`}
         />
         <KpiCard
@@ -347,11 +345,6 @@ export function DashboardPage({
                     </td>
                     <td className="px-4 py-3 text-right">
                       <p className="font-medium">{formatUsd(row.openBalance)}</p>
-                      {row.balanceSummary.dealerCredit > 0 && (
-                        <p className="text-xs font-medium text-psnsOrange">
-                          net of {formatUsd(row.balanceSummary.dealerCredit)} credit
-                        </p>
-                      )}
                     </td>
                     <td className="px-4 py-3 text-right">{formatUsd(row.currentMonthReceivable)}</td>
                     <td className="px-4 py-3">
