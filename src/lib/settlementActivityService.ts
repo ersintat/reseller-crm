@@ -1026,6 +1026,19 @@ export async function recordDealerPaymentWithAllocations(
   return { payment, allocations };
 }
 
+export async function deleteDealerPayment(paymentId: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured.');
+
+  const { error: allocationError } = await supabase
+    .from('dealer_payment_allocations')
+    .delete()
+    .eq('payment_id', paymentId);
+  if (allocationError) throw allocationError;
+
+  const { error: paymentError } = await supabase.from('dealer_payments').delete().eq('id', paymentId);
+  if (paymentError) throw paymentError;
+}
+
 const commissionSelect =
   'id,employee_id,dealer_id,statement_id,period_month,period_year,company_share_amount,printing_costs,shipping_costs,commission_base_adjustments,commission_base,commission_rate,commission_amount,paid_amount,remaining_amount,status,currency,created_at';
 

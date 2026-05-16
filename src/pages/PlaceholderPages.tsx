@@ -1145,6 +1145,7 @@ interface DealerProfilePageProps {
   onCreateStatement?: (dealer: Dealer, month: string) => Promise<void> | void;
   onUpdateStatementStatus?: (statement: Statement, status: Statement['status']) => Promise<void> | void;
   onRecordDealerPayment?: (input: RecordDealerPaymentInput) => Promise<void> | void;
+  onDeleteDealerPayment?: (payment: DealerPayment) => Promise<void> | void;
   onDeleteStatement?: (statement: Statement) => Promise<boolean> | boolean;
   onCreatePendingOrderCost?: (input: PendingOrderCostInput) => Promise<void> | void;
   onUpdatePendingOrderCost?: (cost: PendingOrderCost, updates: PendingOrderCostUpdateInput) => Promise<void> | void;
@@ -1185,6 +1186,7 @@ export function DealerProfilePage({
   onCreateStatement,
   onUpdateStatementStatus,
   onRecordDealerPayment,
+  onDeleteDealerPayment,
   onDeleteStatement,
   onCreatePendingOrderCost,
   onUpdatePendingOrderCost,
@@ -1486,6 +1488,30 @@ export function DealerProfilePage({
     setFlash('Payment recorded and allocated.');
   };
 
+  const deleteDealerPayment = async (payment: DealerPayment) => {
+    if (role !== 'admin') return;
+    if (
+      !window.confirm(
+        'Delete this dealer payment? This will remove its allocations and reopen any affected statement balances. This action cannot be undone.',
+      )
+    ) {
+      return;
+    }
+
+    try {
+      if (onDeleteDealerPayment) {
+        await onDeleteDealerPayment(payment);
+      } else {
+        setPayments((previous) => previous.filter((row) => row.id !== payment.id));
+        setAllocations((previous) => previous.filter((row) => row.paymentId !== payment.id));
+        setFlash('Dealer payment deleted.');
+      }
+    } catch (error) {
+      const maybe = error as { message?: string };
+      setFlash(maybe?.message || 'Dealer payment could not be deleted.');
+    }
+  };
+
   return (
     <PageShell title="Dealer Profile" subtitle={`${dealer.name} account overview and settlement ledger`}>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
@@ -1766,6 +1792,7 @@ export function DealerProfilePage({
                 <th className="min-w-72 px-4 py-3">Description</th>
                 <th className="w-32 whitespace-nowrap px-4 py-3 text-right">Amount</th>
                 <th className="w-32 whitespace-nowrap px-4 py-3 text-right">Running</th>
+                {role === 'admin' && <th className="w-36 whitespace-nowrap px-4 py-3 text-right">Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -1786,6 +1813,20 @@ export function DealerProfilePage({
                       {formatUsd(row.amount)}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3.5 text-right font-semibold text-slate-950">{formatUsd(running)}</td>
+                    {role === 'admin' && (
+                      <td className="whitespace-nowrap px-4 py-3.5 text-right">
+                        {row.payment ? (
+                          <button
+                            className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-psnsCoral transition hover:bg-red-50"
+                            onClick={() => void deleteDealerPayment(row.payment!)}
+                          >
+                            Delete Payment
+                          </button>
+                        ) : (
+                          <span className="text-xs text-slate-400">-</span>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 );
               })}

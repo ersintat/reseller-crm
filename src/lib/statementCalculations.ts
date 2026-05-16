@@ -242,7 +242,7 @@ export function getDealerLedgerRows(
   const dealer = dealers.find((row) => row.id === dealerId);
   if (!dealer) return [];
 
-  const rows: { date: string; kind: string; description: string; amount: number }[] = [];
+  const rows: { date: string; kind: string; description: string; amount: number; payment?: DealerPayment }[] = [];
   statements
     .filter((statement) => statement.dealerId === dealerId)
     .forEach((statement) => {
@@ -270,6 +270,7 @@ export function getDealerLedgerRows(
           getUsdAmount(payment),
         )}`,
         amount: -getUsdAmount(payment),
+        payment,
       }),
     );
 

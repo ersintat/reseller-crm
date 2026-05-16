@@ -25,6 +25,7 @@ import {
   createPendingOrderCost,
   createTransaction as createSupabaseTransaction,
   cancelPendingOrderCost as cancelSupabasePendingOrderCost,
+  deleteDealerPayment as deleteSupabaseDealerPayment,
   deleteTransactionSafely,
   deleteStatementSafely as deleteSupabaseStatementSafely,
   fetchDealerPaymentAllocations,
@@ -1134,6 +1135,26 @@ export function App() {
     }
   };
 
+  const handleDeleteDealerPayment = async (payment: DealerPayment) => {
+    if (role !== 'admin') return;
+
+    try {
+      if (usingSupabaseDealerPaymentData) {
+        await deleteSupabaseDealerPayment(payment.id);
+        setSupabaseDealerPayments((previous) => (previous ?? []).filter((row) => row.id !== payment.id));
+        setSupabaseDealerPaymentAllocations((previous) =>
+          (previous ?? []).filter((row) => row.paymentId !== payment.id),
+        );
+      } else {
+        setDealerPayments((previous) => previous.filter((row) => row.id !== payment.id));
+        setDealerPaymentAllocations((previous) => previous.filter((row) => row.paymentId !== payment.id));
+      }
+      setFlash('Dealer payment deleted.');
+    } catch (error) {
+      setFlash(friendlySupabaseError(error, 'Dealer payment could not be deleted'));
+    }
+  };
+
   const handleRecordEmployeePayment = async (input: RecordEmployeePaymentInput) => {
     if (!usingSupabaseEmployeeSettlementData) return;
 
@@ -1489,7 +1510,7 @@ export function App() {
       >
         <Route index element={<DashboardPage dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} allocations={activeDealerPaymentAllocations} role={role} employee={{ ...employee, assignments: visibleEmployeeAssignments }} employeeCommissions={role === 'employee' ? employeeVisibleCommissions : activeEmployeeCommissions} employeePaymentAllocations={activeEmployeePaymentAllocations} dealerPayments={activeDealerPayments} employeePayments={activeEmployeePayments} pendingOrderCosts={activePendingOrderCosts} />} />
         <Route path="dealers" element={<DealersPage dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} allocations={activeDealerPaymentAllocations} storeIds={role === 'employee' ? assignedStoreIds : undefined} />} />
-        <Route path="dealers/:dealerId" element={<DealerProfilePage role={role} assignedStoreIds={assignedStoreIds} addTransactionStoreIds={addTransactionStoreIds} dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} setStatements={setActiveStatements} setFlash={setFlash} payments={activeDealerPayments} allocations={activeDealerPaymentAllocations} setPayments={setDealerPayments} setAllocations={setDealerPaymentAllocations} employees={employeesWithAssignments} employeeCommissions={activeEmployeeCommissions} setEmployeeCommissions={setEmployeeCommissions} pendingOrderCosts={activePendingOrderCosts} onCreateStatement={usingSupabaseActivityData ? handleCreateStatement : undefined} onUpdateStatementStatus={usingSupabaseActivityData ? handleUpdateStatementStatus : undefined} onRecordDealerPayment={usingSupabaseDealerPaymentData ? handleRecordDealerPayment : undefined} onDeleteStatement={handleDeleteStatement} onUpdateDealer={updateDealer} onCreatePendingOrderCost={handleCreatePendingOrderCost} onUpdatePendingOrderCost={handleUpdatePendingOrderCost} onCancelPendingOrderCost={handleCancelPendingOrderCost} onResolvePendingOrderCost={handleResolvePendingOrderCost} />} />
+        <Route path="dealers/:dealerId" element={<DealerProfilePage role={role} assignedStoreIds={assignedStoreIds} addTransactionStoreIds={addTransactionStoreIds} dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} setStatements={setActiveStatements} setFlash={setFlash} payments={activeDealerPayments} allocations={activeDealerPaymentAllocations} setPayments={setDealerPayments} setAllocations={setDealerPaymentAllocations} employees={employeesWithAssignments} employeeCommissions={activeEmployeeCommissions} setEmployeeCommissions={setEmployeeCommissions} pendingOrderCosts={activePendingOrderCosts} onCreateStatement={usingSupabaseActivityData ? handleCreateStatement : undefined} onUpdateStatementStatus={usingSupabaseActivityData ? handleUpdateStatementStatus : undefined} onRecordDealerPayment={usingSupabaseDealerPaymentData ? handleRecordDealerPayment : undefined} onDeleteDealerPayment={handleDeleteDealerPayment} onDeleteStatement={handleDeleteStatement} onUpdateDealer={updateDealer} onCreatePendingOrderCost={handleCreatePendingOrderCost} onUpdatePendingOrderCost={handleUpdatePendingOrderCost} onCancelPendingOrderCost={handleCancelPendingOrderCost} onResolvePendingOrderCost={handleResolvePendingOrderCost} />} />
         <Route path="statements/:statementId" element={<StatementDetailPage role={role} assignedStoreIds={assignedStoreIds} addTransactionStoreIds={addTransactionStoreIds} confirmedTransactionStoreIds={confirmedTransactionStoreIds} editTransactionStoreIds={editTransactionStoreIds} deleteTransactionStoreIds={deleteTransactionStoreIds} currentUserId={auth.user?.id} dealers={activeDealers} statements={activeStatements} transactions={activeTransactions} setTransactions={setActiveTransactions} setFlash={setFlash} payments={activeDealerPayments} allocations={activeDealerPaymentAllocations} employees={employeesWithAssignments} pendingOrderCosts={activePendingOrderCosts} onCreateTransaction={usingSupabaseActivityData ? handleCreateTransaction : undefined} onUpdateTransaction={handleUpdateTransaction} onDeleteStatement={handleDeleteStatement} onDeleteTransaction={handleDeleteTransaction} onCreatePendingOrderCost={handleCreatePendingOrderCost} onUpdatePendingOrderCost={handleUpdatePendingOrderCost} onCancelPendingOrderCost={handleCancelPendingOrderCost} onResolvePendingOrderCost={handleResolvePendingOrderCost} />} />
         <Route path="transactions" element={role === 'admin' ? <TransactionsPage role={role} assignedStoreIds={assignedStoreIds} dealers={activeDealers} transactions={activeTransactions} setTransactions={setActiveTransactions} setFlash={setFlash} onUpdateTransactionStatus={usingSupabaseActivityData ? handleTransactionStatus : undefined} onDeleteTransaction={handleDeleteTransaction} /> : <Navigate to="/" replace />} />
         <Route path="employees" element={role === 'admin' ? <EmployeesPage employees={employeesWithAssignments} dealers={activeDealers} commissions={activeEmployeeCommissions} allocations={activeEmployeePaymentAllocations} /> : <Navigate to="/" replace />} />
