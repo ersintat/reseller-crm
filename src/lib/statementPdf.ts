@@ -496,6 +496,13 @@ const paymentAllocationColumns: PdfColumn[] = [
   { header: 'Description', width: 223 },
 ];
 
+const paymentReceiptColumns: PdfColumn[] = [
+  { header: 'Statement', width: 120 },
+  { header: 'Applied USD', width: 120, align: 'right' },
+  { header: 'Statement Remaining', width: 140, align: 'right' },
+  { header: 'Status', width: 143 },
+];
+
 const transactionRows = (transactions: SettlementTransaction[]) =>
   transactions.map((transaction) => [
     transaction.date,
@@ -605,6 +612,9 @@ export async function downloadDealerAccountStatementPdf({
   pendingOrderCosts,
 }: DealerAccountPdfInput) {
   const dealerStatements = sortStatementsByPeriod(statements.filter((statement) => statement.dealerId === dealer.id));
+  const dealerStatementIds = new Set(dealerStatements.map((statement) => statement.id));
+  const dealerAllocations = allocations.filter((allocation) => dealerStatementIds.has(allocation.statementId));
+  const allocatedStatementIds = new Set(dealerAllocations.map((allocation) => allocation.statementId));
   const rows = dealerStatements
     .map((statement) => {
       const paid = getEffectiveStatementPaidAmount(statement, allocations);
@@ -613,7 +623,8 @@ export async function downloadDealerAccountStatementPdf({
     })
     .filter(({ statement, totals }) =>
       Math.abs(totals.remaining_amount) > 0.001 ||
-      ['open', 'partially_paid', 'carried_forward'].includes(statement.status),
+      ['open', 'partially_paid', 'carried_forward'].includes(statement.status) ||
+      allocatedStatementIds.has(statement.id),
     );
   const dealerPayments = payments.filter((payment) => payment.dealerId === dealer.id);
   const paymentsById = new Map(payments.map((payment) => [payment.id, payment]));
@@ -621,16 +632,25 @@ export async function downloadDealerAccountStatementPdf({
     (cost) => cost.dealerId === dealer.id && ['pending', 'partially_resolved'].includes(cost.status),
   );
   const dealerLevelPendingCosts = activePendingCosts.filter((cost) => !cost.statementId);
-  const totalPaid = rows.reduce((total, row) => total + row.totals.paid_amount, 0);
+  const includedStatementIds = new Set(rows.map(({ statement }) => statement.id));
+  const includedAllocations = dealerAllocations.filter((allocation) => includedStatementIds.has(allocation.statementId));
+  const totalAppliedToIncludedStatements = includedAllocations.reduce(
+    (total, allocation) => total + getAllocatedUsdAmount(allocation),
+    0,
+  );
+  const totalPaidFromStatementTotals = rows.reduce((total, row) => total + row.totals.paid_amount, 0);
+  const totalPaid = totalAppliedToIncludedStatements || totalPaidFromStatementTotals;
   const totalRemaining = rows.reduce((total, row) => total + row.totals.remaining_amount, 0);
   const sortedDealerPayments = dealerPayments.slice().sort((a, b) => b.paymentDate.localeCompare(a.paymentDate));
   const latestPayment = sortedDealerPayments[0];
-  const totalPaymentApplied = dealerPayments.reduce((total, payment) => {
-    const applied = allocations
-      .filter((allocation) => allocation.paymentId === payment.id)
-      .reduce((allocationTotal, allocation) => allocationTotal + getAllocatedUsdAmount(allocation), 0);
-    return total + (applied || getUsdAmount(payment));
-  }, 0);
+  const latestPaymentAllocations = latestPayment
+    ? dealerAllocations.filter((allocation) => allocation.paymentId === latestPayment.id)
+    : [];
+  const latestPaymentApplied = latestPaymentAllocations.reduce(
+    (total, allocation) => total + getAllocatedUsdAmount(allocation),
+    0,
+  );
+  const rowByStatementId = new Map(rows.map((row) => [row.statement.id, row]));
   const generatedAt = new Date().toLocaleDateString();
   const pdf = new PdfDocument(await loadPdfLogo());
 
@@ -646,15 +666,19 @@ export async function downloadDealerAccountStatementPdf({
 
   pdf.section('Account Summary');
   pdf.summaryTable([
-    { label: 'Total Open Balance', value: usd(totalRemaining), accent: true },
-    { label: 'Total Paid', value: usd(totalPaid) },
-    { label: 'Open Statements', value: String(rows.length) },
+    { label: totalRemaining > 0.001 ? 'Total Amount Due' : 'Remaining Balance', value: usd(totalRemaining), accent: true },
+    { label: 'Total Paid Applied', value: usd(totalPaid) },
+    { label: 'Included Statements', value: String(rows.length) },
+    { label: 'Account Status', value: totalRemaining > 0.001 ? 'Payment Due' : 'Fully Paid', accent: totalRemaining <= 0.001 },
     { label: 'Pending Order Costs', value: String(activePendingCosts.length) },
   ]);
 
-  pdf.section('Open Statements', 'Open, partially paid, and carried-forward balances included in this account statement.');
+  pdf.section(
+    'Settlement Statements',
+    'Included statements cover unpaid balances and statements connected to dealer payment allocations.',
+  );
   if (rows.length === 0) {
-    pdf.empty('No open statement balances.');
+    pdf.empty('No settlement statements matched this account statement.');
   } else {
     pdf.table(
       [
@@ -681,7 +705,9 @@ export async function downloadDealerAccountStatementPdf({
       ]),
       { fontSize: 5.8, rowPadding: 5 },
     );
-    pdf.summaryTable([{ label: 'Total Amount Due', value: usd(totalRemaining), accent: true }]);
+    pdf.summaryTable([
+      { label: totalRemaining > 0.001 ? 'Total Amount Due' : 'Remaining Balance', value: usd(totalRemaining), accent: true },
+    ]);
   }
 
   pdf.section('Payment Summary');
@@ -690,7 +716,7 @@ export async function downloadDealerAccountStatementPdf({
   } else {
     pdf.compactInfo([
       { label: 'Payments Recorded', value: String(dealerPayments.length) },
-      { label: 'Applied USD', value: usd(totalPaymentApplied) },
+      { label: 'Applied to Included Statements', value: usd(totalPaid) },
       { label: 'Latest Payment', value: latestPayment?.paymentDate || '-' },
       {
         label: 'Latest Amount',
@@ -699,6 +725,31 @@ export async function downloadDealerAccountStatementPdf({
           : '-',
       },
     ]);
+  }
+
+  if (latestPayment && totalRemaining <= 0.001) {
+    pdf.section('Settlement Payment Receipt');
+    pdf.warningSummary('Account Fully Paid', [
+      `Payment date: ${latestPayment.paymentDate}`,
+      `Original payment: ${money(latestPayment.originalAmount ?? latestPayment.amount, latestPayment.originalCurrency ?? latestPayment.currency)}`,
+      `Applied USD: ${usd(latestPaymentApplied || getUsdAmount(latestPayment))}`,
+      `Remaining balance after payment: ${usd(totalRemaining)}`,
+    ]);
+    if (latestPaymentAllocations.length > 0) {
+      pdf.table(
+        paymentReceiptColumns,
+        latestPaymentAllocations.map((allocation) => {
+          const row = rowByStatementId.get(allocation.statementId);
+          return [
+            row?.statement.month || allocation.statementId,
+            usd(getAllocatedUsdAmount(allocation)),
+            row ? usd(row.totals.remaining_amount) : '-',
+            row?.statement.status || '-',
+          ];
+        }),
+        { fontSize: 6.6, rowPadding: 5 },
+      );
+    }
   }
 
   pdf.section('Pending Order Costs');
