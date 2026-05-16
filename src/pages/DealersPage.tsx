@@ -7,6 +7,7 @@ import { SectionCard } from '../components/ui/Primitives';
 import { PageShell } from './Shared';
 
 const formatPercent = (value: number) => `${(value * 100).toFixed(1).replace(/\.0$/, '')}%`;
+const normalizeDisplayMoney = (amount: number) => (Math.abs(amount) <= 0.01 ? 0 : amount);
 
 export function DealersPage({ dealers, statements, transactions, allocations, storeIds }: { dealers: Dealer[]; statements: Statement[]; transactions: SettlementTransaction[]; allocations: any[]; storeIds?: string[] }) {
   const visible = storeIds ? dealers.filter((d) => storeIds.includes(d.storeId)) : dealers;
@@ -46,12 +47,9 @@ export function DealersPage({ dealers, statements, transactions, allocations, st
                     </div>
                     <div className="rounded-xl bg-slate-50 px-3 py-2 text-right ring-1 ring-psnsMist">
                       <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Open Balance</p>
-                      <p className="mt-1 text-sm font-semibold text-indigoBrand">{formatUsd(balance.netOpenBalance)}</p>
-                      {balance.dealerCredit > 0 && (
-                        <p className="mt-0.5 text-[11px] font-medium text-psnsOrange">
-                          Includes {formatUsd(balance.dealerCredit)} credit
-                        </p>
-                      )}
+                      <p className="mt-1 text-sm font-semibold text-indigoBrand">
+                        {formatUsd(normalizeDisplayMoney(balance.netOpenBalance))}
+                      </p>
                     </div>
                   </div>
                   <div className="flex shrink-0 justify-start lg:justify-end">
