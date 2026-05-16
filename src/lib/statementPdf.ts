@@ -671,8 +671,6 @@ export async function downloadDealerAccountStatementPdf({
 
   pdf.section('Account Summary');
   pdf.summaryTable([
-    { label: 'Gross Receivable', value: usd(balanceSummary.grossReceivable) },
-    { label: 'Dealer Credit', value: usd(balanceSummary.dealerCredit) },
     { label: totalRemaining > moneyDisplayTolerance ? 'Net Amount Due' : 'Remaining Balance', value: usd(totalRemaining), accent: true },
     { label: 'Total Paid Applied', value: usd(totalPaid) },
     { label: 'Included Statements', value: String(rows.length) },
@@ -713,8 +711,6 @@ export async function downloadDealerAccountStatementPdf({
       { fontSize: 5.8, rowPadding: 5 },
     );
     pdf.summaryTable([
-      { label: 'Gross Receivable', value: usd(balanceSummary.grossReceivable) },
-      { label: 'Dealer Credit', value: usd(balanceSummary.dealerCredit) },
       { label: totalRemaining > moneyDisplayTolerance ? 'Net Amount Due' : 'Remaining Balance', value: usd(totalRemaining), accent: true },
     ]);
   }

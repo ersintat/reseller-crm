@@ -276,10 +276,7 @@ export function getDealerLedgerRows(
       rows.push({
         date: statement.month,
         kind: 'Statement',
-        description:
-          totals.remaining_amount < 0
-            ? `${statement.month} settlement - Dealer credit / carried forward`
-            : `${statement.month} settlement`,
+        description: `${statement.month} settlement`,
         amount: totals.dealer_receivable_amount,
       });
     });

@@ -1638,11 +1638,7 @@ export function DealerProfilePage({
           label="Net Open Balance"
           value={formatUsd(displayOpenBalance)}
           secondary={openBalanceSecondaryText}
-          helper={
-            balanceSummary.dealerCredit > 0
-              ? `Includes ${formatUsd(balanceSummary.dealerCredit)} dealer credit.`
-              : 'Unpaid balance after payments and credits.'
-          }
+          helper="Final amount currently due."
         />
         <SummaryCard
           label="Current Period Receivable"
@@ -1870,19 +1866,14 @@ export function DealerProfilePage({
                   <span className="font-semibold text-slate-700">Net amount due: </span>
                   {formatUsd(suggestedPaymentAmount)}
                 </p>
-                {balanceSummary.dealerCredit > MONEY_DISPLAY_TOLERANCE && (
-                  <p className="mt-1 text-psnsOrange">
-                    Gross receivable {formatUsd(balanceSummary.grossReceivable)} less {formatUsd(balanceSummary.dealerCredit)} dealer credit.
-                  </p>
-                )}
                 {hasNoAmountDue && (
                   <p className="mt-1 font-medium text-emerald-700">
-                    No amount due. Dealer account is fully paid.
+                    No amount due.
                   </p>
                 )}
                 {hasMeaningfulOverpayment && !hasNoAmountDue && (
                   <p className="mt-2 font-medium text-psnsOrange">
-                    This payment exceeds the net amount due. Dealer credits are already included in the net balance.
+                    This payment exceeds the net amount due.
                   </p>
                 )}
               </div>
@@ -1950,7 +1941,7 @@ export function DealerProfilePage({
 
       <SectionCard
         title="Statement Ledger"
-        subtitle="Chronological receivable and payment activity. Negative statement balances are dealer credits and reduce net amount due."
+        subtitle="Chronological receivable and payment activity. Negative amounts reduce the net balance."
       >
         {ledger.length === 0 ? (
           <EmptyState title="No ledger activity yet." />
