@@ -153,11 +153,32 @@ export const getDealerOpenBalance = (
   transactions: SettlementTransaction[],
   dealers: Dealer[],
   allocations: DealerPaymentAllocation[],
-) =>
-  getOpenStatementsForDealer(dealerId, statements, transactions, dealers, allocations).reduce(
-    (total, row) => total + row.remaining,
-    0,
-  );
+) => getDealerBalanceSummary(dealerId, statements, transactions, dealers, allocations).netOpenBalance;
+
+export const getDealerBalanceSummary = (
+  dealerId: string,
+  statements: Statement[],
+  transactions: SettlementTransaction[],
+  dealers: Dealer[],
+  allocations: DealerPaymentAllocation[],
+) => {
+  const dealer = dealers.find((row) => row.id === dealerId);
+  if (!dealer) return { grossReceivable: 0, dealerCredit: 0, netOpenBalance: 0 };
+
+  return statements
+    .filter((statement) => statement.dealerId === dealerId)
+    .reduce(
+      (summary, statement) => {
+        const remaining = getStatementRemainingAmount(statement, transactions, dealer, allocations);
+        return {
+          grossReceivable: summary.grossReceivable + Math.max(remaining, 0),
+          dealerCredit: summary.dealerCredit + Math.max(-remaining, 0),
+          netOpenBalance: summary.netOpenBalance + remaining,
+        };
+      },
+      { grossReceivable: 0, dealerCredit: 0, netOpenBalance: 0 },
+    );
+};
 
 export const getCurrentMonthReceivable = (
   dealerId: string,
@@ -255,7 +276,10 @@ export function getDealerLedgerRows(
       rows.push({
         date: statement.month,
         kind: 'Statement',
-        description: `${statement.month} settlement`,
+        description:
+          totals.remaining_amount < 0
+            ? `${statement.month} settlement - Dealer credit / carried forward`
+            : `${statement.month} settlement`,
         amount: totals.dealer_receivable_amount,
       });
     });

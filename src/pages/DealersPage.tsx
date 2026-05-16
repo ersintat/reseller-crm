@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Dealer, SettlementTransaction, Statement } from '../types';
 import { stores, formatUsd } from '../data/mockData';
-import { getDealerOpenBalance } from '../lib/statementCalculations';
+import { getDealerBalanceSummary } from '../lib/statementCalculations';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { SectionCard } from '../components/ui/Primitives';
 import { PageShell } from './Shared';
@@ -16,7 +16,7 @@ export function DealersPage({ dealers, statements, transactions, allocations, st
         <div className="space-y-3 p-5">
           {visible.map((dealer) => {
             const storeName = dealer.storeName || stores.find((store) => store.id === dealer.storeId)?.name || dealer.storeId;
-            const openBalance = getDealerOpenBalance(dealer.id, statements, transactions, dealers, allocations);
+            const balance = getDealerBalanceSummary(dealer.id, statements, transactions, dealers, allocations);
             return (
               <div
                 key={dealer.id}
@@ -46,7 +46,12 @@ export function DealersPage({ dealers, statements, transactions, allocations, st
                     </div>
                     <div className="rounded-xl bg-slate-50 px-3 py-2 text-right ring-1 ring-psnsMist">
                       <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Open Balance</p>
-                      <p className="mt-1 text-sm font-semibold text-indigoBrand">{formatUsd(openBalance)}</p>
+                      <p className="mt-1 text-sm font-semibold text-indigoBrand">{formatUsd(balance.netOpenBalance)}</p>
+                      {balance.dealerCredit > 0 && (
+                        <p className="mt-0.5 text-[11px] font-medium text-psnsOrange">
+                          Includes {formatUsd(balance.dealerCredit)} credit
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div className="flex shrink-0 justify-start lg:justify-end">

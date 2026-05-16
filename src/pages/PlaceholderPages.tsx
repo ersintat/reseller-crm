@@ -29,8 +29,8 @@ import {
   getCommissionPreviewsForStatement,
   getCurrentMonthEmployeeCommission,
   getCurrentMonthReceivable,
+  getDealerBalanceSummary,
   getDealerLedgerRows,
-  getDealerOpenBalance,
   getEffectiveStatementPaidAmount,
   getEmployeeCommissionLedgerRows,
   getEmployeeCommissionPaidAmount,
@@ -1239,7 +1239,8 @@ export function DealerProfilePage({
   );
   const openStatements = getOpenStatementsForDealer(dealer.id, statements, transactions, dealers, allocations);
   const ledger = getDealerLedgerRows(dealer.id, statements, transactions, dealers, payments, allocations);
-  const openBalance = getDealerOpenBalance(dealer.id, statements, transactions, dealers, allocations);
+  const balanceSummary = getDealerBalanceSummary(dealer.id, statements, transactions, dealers, allocations);
+  const openBalance = balanceSummary.netOpenBalance;
   const currentMonthReceivable = getCurrentMonthReceivable(
     dealer.id,
     statements,
@@ -1293,6 +1294,7 @@ export function DealerProfilePage({
     : secondaryReceivableTotal;
   const secondaryLastPayment = dealerSecondaryCurrency ? getPaymentSecondary(lastPayment, dealerSecondaryCurrency) : null;
   const paymentUsdPreview = calculateUsdPreview(payForm.amount, payForm.currency, payForm.exchangeRateToUsd);
+  const suggestedPaymentAmount = Math.max(openBalance, 0);
   let running = 0;
 
   const createStatement = () => {
@@ -1519,7 +1521,11 @@ export function DealerProfilePage({
           label="Open Balance"
           value={formatUsd(openBalance)}
           secondary={dealerSecondaryCurrency ? secondaryText(secondaryOpenBalance, dealerSecondaryCurrency, openBalance) : undefined}
-          helper="Sum of statement remaining amounts."
+          helper={
+            balanceSummary.dealerCredit > 0
+              ? `Gross receivable ${formatUsd(balanceSummary.grossReceivable)} minus ${formatUsd(balanceSummary.dealerCredit)} dealer credit.`
+              : 'Net sum of statement remaining amounts.'
+          }
         />
         <SummaryCard
           label="Current Month Receivable"
@@ -1718,6 +1724,36 @@ export function DealerProfilePage({
                 currency={payForm.currency}
                 exchangeRateToUsd={payForm.exchangeRateToUsd}
               />
+              <div className="rounded-xl border border-psnsMist bg-slate-50 px-4 py-3 text-xs text-slate-600">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span>
+                    <span className="font-semibold text-slate-700">Net amount due: </span>
+                    {formatUsd(suggestedPaymentAmount)}
+                    {balanceSummary.dealerCredit > 0 && (
+                      <span className="ml-2 text-psnsOrange">
+                        Gross {formatUsd(balanceSummary.grossReceivable)} less {formatUsd(balanceSummary.dealerCredit)} dealer credit.
+                      </span>
+                    )}
+                  </span>
+                  <button
+                    className="rounded-lg border border-psnsMist bg-white px-2.5 py-1 text-xs font-semibold text-indigoBrand shadow-sm hover:bg-slate-50"
+                    onClick={() => {
+                      const rate = getExchangeRateForSave(payForm.currency, payForm.exchangeRateToUsd) || 1;
+                      setPayForm({
+                        ...payForm,
+                        amount: (suggestedPaymentAmount / rate).toFixed(2),
+                      });
+                    }}
+                  >
+                    Use Net Due
+                  </button>
+                </div>
+                {paymentUsdPreview > suggestedPaymentAmount + 0.001 && suggestedPaymentAmount >= 0 && (
+                  <p className="mt-2 font-medium text-psnsOrange">
+                    This payment exceeds the net amount due. Dealer credits are already included in the net balance.
+                  </p>
+                )}
+              </div>
               <p className="text-xs text-slate-500">
                 Allocations are applied against USD statement balances using the USD equivalent.
               </p>
@@ -1798,18 +1834,31 @@ export function DealerProfilePage({
             <tbody>
               {ledger.map((row, index) => {
                 running += row.amount;
-                const isPayment = row.amount < 0;
+                const isDealerPayment = Boolean(row.payment);
+                const isCreditStatement = !row.payment && row.amount < 0;
                 return (
                   <tr
                     key={`${row.date}-${index}`}
-                    className={isPayment ? 'border-t border-slate-100 bg-emerald-50/40' : 'border-t border-slate-100 hover:bg-slate-50'}
+                    className={
+                      isDealerPayment
+                        ? 'border-t border-slate-100 bg-emerald-50/40'
+                        : isCreditStatement
+                          ? 'border-t border-orange-100 bg-orange-50/40'
+                          : 'border-t border-slate-100 hover:bg-slate-50'
+                    }
                   >
                     <td className="whitespace-nowrap px-4 py-3.5 text-slate-600">{row.date}</td>
                     <td className="whitespace-nowrap px-4 py-3.5 font-medium text-slate-900">
                       {row.kind}
                     </td>
                     <td className="max-w-xl px-4 py-3.5 text-slate-600">{row.description}</td>
-                    <td className={isPayment ? 'whitespace-nowrap px-4 py-3.5 text-right font-semibold text-emerald-700' : 'whitespace-nowrap px-4 py-3.5 text-right font-semibold text-slate-950'}>
+                    <td className={
+                      isDealerPayment
+                        ? 'whitespace-nowrap px-4 py-3.5 text-right font-semibold text-emerald-700'
+                        : isCreditStatement
+                          ? 'whitespace-nowrap px-4 py-3.5 text-right font-semibold text-psnsOrange'
+                          : 'whitespace-nowrap px-4 py-3.5 text-right font-semibold text-slate-950'
+                    }>
                       {formatUsd(row.amount)}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3.5 text-right font-semibold text-slate-950">{formatUsd(running)}</td>

@@ -18,6 +18,7 @@ import {
   getCurrentMonthEmployeeCommission,
   getCurrentMonthReceivable,
   getDashboardTotals,
+  getDealerBalanceSummary,
   getDealerOpenBalance,
   getEffectiveStatementPaidAmount,
   getEmployeeOpenCommissionBalance,
@@ -186,6 +187,7 @@ export function DashboardPage({
       dealer,
       storeName: dealer.storeName || stores.find((store) => store.id === dealer.storeId)?.name || dealer.storeId,
       openBalance: getDealerOpenBalance(dealer.id, statements, transactions, dealers, allocations),
+      balanceSummary: getDealerBalanceSummary(dealer.id, statements, transactions, dealers, allocations),
       currentMonthReceivable: getCurrentMonthReceivable(
         dealer.id,
         statements,
@@ -274,7 +276,7 @@ export function DashboardPage({
         <KpiCard
           label="Dealer Open Balance"
           value={formatUsd(totals.openBalance)}
-          helper="Unpaid dealer receivables across open statements."
+          helper="Net unpaid dealer receivables, including dealer credits."
           context={`${dealerRows.filter((row) => row.openBalance > 0).length} active`}
         />
         <KpiCard
@@ -343,7 +345,14 @@ export function DashboardPage({
                       <p className="font-medium text-slate-950">{row.dealer.name}</p>
                       <p className="text-xs text-slate-500">{row.storeName}</p>
                     </td>
-                    <td className="px-4 py-3 font-medium text-right">{formatUsd(row.openBalance)}</td>
+                    <td className="px-4 py-3 text-right">
+                      <p className="font-medium">{formatUsd(row.openBalance)}</p>
+                      {row.balanceSummary.dealerCredit > 0 && (
+                        <p className="text-xs font-medium text-psnsOrange">
+                          net of {formatUsd(row.balanceSummary.dealerCredit)} credit
+                        </p>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-right">{formatUsd(row.currentMonthReceivable)}</td>
                     <td className="px-4 py-3">
                       {row.lastPayment ? (

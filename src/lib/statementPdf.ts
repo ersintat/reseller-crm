@@ -8,6 +8,7 @@ import {
 } from '../types';
 import {
   calculateStatementTotals,
+  getDealerBalanceSummary,
   getAllocatedUsdAmount,
   getEffectiveStatementPaidAmount,
   getUsdAmount,
@@ -640,7 +641,8 @@ export async function downloadDealerAccountStatementPdf({
   );
   const totalPaidFromStatementTotals = rows.reduce((total, row) => total + row.totals.paid_amount, 0);
   const totalPaid = totalAppliedToIncludedStatements || totalPaidFromStatementTotals;
-  const totalRemaining = rows.reduce((total, row) => total + row.totals.remaining_amount, 0);
+  const balanceSummary = getDealerBalanceSummary(dealer.id, statements, transactions, [dealer], allocations);
+  const totalRemaining = balanceSummary.netOpenBalance;
   const sortedDealerPayments = dealerPayments.slice().sort((a, b) => b.paymentDate.localeCompare(a.paymentDate));
   const latestPayment = sortedDealerPayments[0];
   const latestPaymentAllocations = latestPayment
@@ -666,7 +668,9 @@ export async function downloadDealerAccountStatementPdf({
 
   pdf.section('Account Summary');
   pdf.summaryTable([
-    { label: totalRemaining > 0.001 ? 'Total Amount Due' : 'Remaining Balance', value: usd(totalRemaining), accent: true },
+    { label: 'Gross Receivable', value: usd(balanceSummary.grossReceivable) },
+    { label: 'Dealer Credit', value: usd(balanceSummary.dealerCredit) },
+    { label: totalRemaining > 0.001 ? 'Net Amount Due' : 'Remaining Balance', value: usd(totalRemaining), accent: true },
     { label: 'Total Paid Applied', value: usd(totalPaid) },
     { label: 'Included Statements', value: String(rows.length) },
     { label: 'Account Status', value: totalRemaining > 0.001 ? 'Payment Due' : 'Fully Paid', accent: totalRemaining <= 0.001 },
@@ -706,7 +710,9 @@ export async function downloadDealerAccountStatementPdf({
       { fontSize: 5.8, rowPadding: 5 },
     );
     pdf.summaryTable([
-      { label: totalRemaining > 0.001 ? 'Total Amount Due' : 'Remaining Balance', value: usd(totalRemaining), accent: true },
+      { label: 'Gross Receivable', value: usd(balanceSummary.grossReceivable) },
+      { label: 'Dealer Credit', value: usd(balanceSummary.dealerCredit) },
+      { label: totalRemaining > 0.001 ? 'Net Amount Due' : 'Remaining Balance', value: usd(totalRemaining), accent: true },
     ]);
   }
 
