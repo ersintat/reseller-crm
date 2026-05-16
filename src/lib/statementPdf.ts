@@ -49,6 +49,7 @@ const pageHeight = 842;
 const margin = 36;
 const contentWidth = pageWidth - margin * 2;
 const bottomMargin = 52;
+const moneyDisplayTolerance = 0.01;
 
 const color = {
   slate950: [0.06, 0.09, 0.16] as Tone,
@@ -66,8 +67,10 @@ const color = {
   emerald: [0.02, 0.48, 0.31] as Tone,
 };
 
+const normalizePdfMoney = (amount: number) => (Math.abs(amount) <= moneyDisplayTolerance ? 0 : amount);
+
 const usd = (amount: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(normalizePdfMoney(amount));
 
 const money = (amount: number | undefined, currency = 'USD') =>
   `${currency} ${new Intl.NumberFormat('en-US', {
@@ -642,7 +645,7 @@ export async function downloadDealerAccountStatementPdf({
   const totalPaidFromStatementTotals = rows.reduce((total, row) => total + row.totals.paid_amount, 0);
   const totalPaid = totalAppliedToIncludedStatements || totalPaidFromStatementTotals;
   const balanceSummary = getDealerBalanceSummary(dealer.id, statements, transactions, [dealer], allocations);
-  const totalRemaining = balanceSummary.netOpenBalance;
+  const totalRemaining = normalizePdfMoney(balanceSummary.netOpenBalance);
   const sortedDealerPayments = dealerPayments.slice().sort((a, b) => b.paymentDate.localeCompare(a.paymentDate));
   const latestPayment = sortedDealerPayments[0];
   const latestPaymentAllocations = latestPayment
@@ -670,10 +673,10 @@ export async function downloadDealerAccountStatementPdf({
   pdf.summaryTable([
     { label: 'Gross Receivable', value: usd(balanceSummary.grossReceivable) },
     { label: 'Dealer Credit', value: usd(balanceSummary.dealerCredit) },
-    { label: totalRemaining > 0.001 ? 'Net Amount Due' : 'Remaining Balance', value: usd(totalRemaining), accent: true },
+    { label: totalRemaining > moneyDisplayTolerance ? 'Net Amount Due' : 'Remaining Balance', value: usd(totalRemaining), accent: true },
     { label: 'Total Paid Applied', value: usd(totalPaid) },
     { label: 'Included Statements', value: String(rows.length) },
-    { label: 'Account Status', value: totalRemaining > 0.001 ? 'Payment Due' : 'Fully Paid', accent: totalRemaining <= 0.001 },
+    { label: 'Account Status', value: totalRemaining > moneyDisplayTolerance ? 'Payment Due' : 'Fully Paid', accent: totalRemaining <= moneyDisplayTolerance },
     { label: 'Pending Order Costs', value: String(activePendingCosts.length) },
   ]);
 
@@ -712,7 +715,7 @@ export async function downloadDealerAccountStatementPdf({
     pdf.summaryTable([
       { label: 'Gross Receivable', value: usd(balanceSummary.grossReceivable) },
       { label: 'Dealer Credit', value: usd(balanceSummary.dealerCredit) },
-      { label: totalRemaining > 0.001 ? 'Net Amount Due' : 'Remaining Balance', value: usd(totalRemaining), accent: true },
+      { label: totalRemaining > moneyDisplayTolerance ? 'Net Amount Due' : 'Remaining Balance', value: usd(totalRemaining), accent: true },
     ]);
   }
 
@@ -733,7 +736,7 @@ export async function downloadDealerAccountStatementPdf({
     ]);
   }
 
-  if (latestPayment && totalRemaining <= 0.001) {
+  if (latestPayment && totalRemaining <= moneyDisplayTolerance) {
     pdf.section('Settlement Payment Receipt');
     pdf.warningSummary('Account Fully Paid', [
       `Payment date: ${latestPayment.paymentDate}`,

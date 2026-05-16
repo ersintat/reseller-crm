@@ -74,6 +74,7 @@ const transactionTypes: TransactionType[] = [
   'shipping_cost',
   'manual_adjustment',
 ];
+const MONEY_DISPLAY_TOLERANCE = 0.01;
 const employeePaymentCurrencyOptions: SupportedCurrency[] = ['TRY', 'USD', 'AUD'];
 const dealerStatuses: Dealer['status'][] = ['active', 'review', 'inactive'];
 const adjustmentScopes: ManualAdjustmentScope[] = [
@@ -86,6 +87,10 @@ const adjustmentDirections: ManualAdjustmentDirection[] = ['increase', 'decrease
 function parsePositiveNumber(value: string) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function normalizeDisplayMoney(amount: number) {
+  return Math.abs(amount) <= MONEY_DISPLAY_TOLERANCE ? 0 : amount;
 }
 
 function parseOptionalNonNegativeNumber(value: string) {
@@ -1385,14 +1390,27 @@ export function DealerProfilePage({
       })
     : null;
   const secondaryLastPayment = dealerSecondaryCurrency ? getPaymentSecondary(lastPayment, dealerSecondaryCurrency) : null;
-  const openBalanceSecondaryText = Math.abs(openBalance) < 0.001
+  const displayOpenBalance = normalizeDisplayMoney(openBalance);
+  const displayNetAmountDue = Math.max(displayOpenBalance, 0);
+  const openBalanceSecondaryText = Math.abs(openBalance) <= MONEY_DISPLAY_TOLERANCE
     ? 'Fully paid'
     : dealerSecondaryCurrency
       ? secondaryText(secondaryOpenBalance, dealerSecondaryCurrency, openBalance)
       : undefined;
   const paymentUsdPreview = calculateUsdPreview(payForm.amount, payForm.currency, payForm.exchangeRateToUsd);
-  const suggestedPaymentAmount = Math.max(openBalance, 0);
+  const suggestedPaymentAmount = displayNetAmountDue;
+  const hasNoAmountDue = suggestedPaymentAmount <= MONEY_DISPLAY_TOLERANCE;
+  const hasMeaningfulOverpayment = paymentUsdPreview > suggestedPaymentAmount + MONEY_DISPLAY_TOLERANCE;
   let running = 0;
+
+  const resetDealerPaymentForm = () => {
+    setPayForm((previous) => ({
+      ...previous,
+      amount: '',
+      description: '',
+    }));
+    setManual({});
+  };
 
   const createStatement = () => {
     const selectedMonth = statementMonthRef.current?.value || month;
@@ -1566,6 +1584,7 @@ export function DealerProfilePage({
         allocations: rows,
         statements,
       });
+      resetDealerPaymentForm();
       return;
     }
 
@@ -1584,6 +1603,7 @@ export function DealerProfilePage({
         return { ...statement, paidAmount: paid, status };
       }),
     );
+    resetDealerPaymentForm();
     setFlash('Payment recorded and allocated.');
   };
 
@@ -1616,11 +1636,11 @@ export function DealerProfilePage({
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
         <SummaryCard
           label="Net Open Balance"
-          value={formatUsd(openBalance)}
+          value={formatUsd(displayOpenBalance)}
           secondary={openBalanceSecondaryText}
           helper={
             balanceSummary.dealerCredit > 0
-              ? `Gross receivable ${formatUsd(balanceSummary.grossReceivable)} minus ${formatUsd(balanceSummary.dealerCredit)} dealer credit.`
+              ? `Includes ${formatUsd(balanceSummary.dealerCredit)} dealer credit.`
               : 'Unpaid balance after payments and credits.'
           }
         />
@@ -1785,7 +1805,7 @@ export function DealerProfilePage({
                 </FormLabel>
                 <FormLabel label="Original payment amount">
                   <input
-                    placeholder="0.00"
+                    placeholder={suggestedPaymentAmount > 0 ? suggestedPaymentAmount.toFixed(2) : '0.00'}
                     type="text"
                     inputMode="decimal"
                     className="h-10 w-full px-3"
@@ -1846,30 +1866,21 @@ export function DealerProfilePage({
                 exchangeRateToUsd={payForm.exchangeRateToUsd}
               />
               <div className="rounded-xl border border-psnsMist bg-slate-50 px-4 py-3 text-xs text-slate-600">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span>
-                    <span className="font-semibold text-slate-700">Net amount due: </span>
-                    {formatUsd(suggestedPaymentAmount)}
-                    {balanceSummary.dealerCredit > 0 && (
-                      <span className="ml-2 text-psnsOrange">
-                        Gross {formatUsd(balanceSummary.grossReceivable)} less {formatUsd(balanceSummary.dealerCredit)} dealer credit.
-                      </span>
-                    )}
-                  </span>
-                  <button
-                    className="rounded-lg border border-psnsMist bg-white px-2.5 py-1 text-xs font-semibold text-indigoBrand shadow-sm hover:bg-slate-50"
-                    onClick={() => {
-                      const rate = getExchangeRateForSave(payForm.currency, payForm.exchangeRateToUsd) || 1;
-                      setPayForm({
-                        ...payForm,
-                        amount: (suggestedPaymentAmount / rate).toFixed(2),
-                      });
-                    }}
-                  >
-                    Use Net Due
-                  </button>
-                </div>
-                {paymentUsdPreview > suggestedPaymentAmount + 0.001 && suggestedPaymentAmount >= 0 && (
+                <p>
+                  <span className="font-semibold text-slate-700">Net amount due: </span>
+                  {formatUsd(suggestedPaymentAmount)}
+                </p>
+                {balanceSummary.dealerCredit > MONEY_DISPLAY_TOLERANCE && (
+                  <p className="mt-1 text-psnsOrange">
+                    Gross receivable {formatUsd(balanceSummary.grossReceivable)} less {formatUsd(balanceSummary.dealerCredit)} dealer credit.
+                  </p>
+                )}
+                {hasNoAmountDue && (
+                  <p className="mt-1 font-medium text-emerald-700">
+                    No amount due. Dealer account is fully paid.
+                  </p>
+                )}
+                {hasMeaningfulOverpayment && !hasNoAmountDue && (
                   <p className="mt-2 font-medium text-psnsOrange">
                     This payment exceeds the net amount due. Dealer credits are already included in the net balance.
                   </p>
@@ -1937,7 +1948,10 @@ export function DealerProfilePage({
         onResolve={onResolvePendingOrderCost}
       />
 
-      <SectionCard title="Statement Ledger" subtitle="Chronological receivable and payment activity for this dealer.">
+      <SectionCard
+        title="Statement Ledger"
+        subtitle="Chronological receivable and payment activity. Negative statement balances are dealer credits and reduce net amount due."
+      >
         {ledger.length === 0 ? (
           <EmptyState title="No ledger activity yet." />
         ) : (
