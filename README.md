@@ -97,6 +97,18 @@ When Supabase activity data is active, the app shows: `Supabase settlement, comm
 
 Statement, transaction, dealer payment, dealer payment allocation, employee commission, employee payment, employee payment allocation, and assignment edit writes use Supabase in auth mode. Cached statement `paid_amount` and `remaining_amount` columns are not authoritative yet; the UI still derives paid and remaining amounts from dealer payment allocations with the existing frontend helpers. Employee commission generation and payment allocation still use the frontend calculation helpers; database RPCs/triggers are deferred.
 
+## Settlement Calculation Formula
+
+The app uses USD as the reporting currency for statement calculations. Only `confirmed` transactions are included.
+
+- Net profit = platform bank payouts - printing costs - shipping costs - store expenses + net-profit adjustments.
+- Dealer share = net profit x dealer share percentage.
+- Company share = net profit x company share percentage.
+- Dealer receivable = company share + printing costs + shipping costs + dealer receivable adjustments.
+- Store expenses are paid from the dealer/store account, so they reduce net profit before the split and are not added back to dealer receivable.
+- Printing and shipping reduce net profit before the split, then are recovered through dealer receivable because they are company-paid costs.
+- Employee commission base remains `company_share_amount - printing_costs - shipping_costs + commission_base_adjustments`, with commission amounts clamped to never be negative.
+
 ## Multi-Currency Foundation
 
 USD remains the reporting and dashboard currency. Supabase money-moving rows now include original-currency storage fields for future multi-currency UI work:

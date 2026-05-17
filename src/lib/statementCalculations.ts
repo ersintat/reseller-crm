@@ -84,7 +84,8 @@ export function calculateStatementTotals(
   const total_shipping_costs = sumConfirmed(scoped, 'shipping_cost');
   const adj_shareable = signedAdjustment(scoped, 'shareable_net');
   const adj_receivable = signedAdjustment(scoped, 'dealer_receivable_only');
-  const shareable_net_amount = total_bank_payouts - total_store_expenses + adj_shareable;
+  const shareable_net_amount =
+    total_bank_payouts - total_printing_costs - total_shipping_costs - total_store_expenses + adj_shareable;
   const dealer_share_amount = shareable_net_amount * dealer.dealerSharePercentage;
   const company_share_amount = shareable_net_amount * dealer.companySharePercentage;
   const dealer_receivable_amount = company_share_amount + total_printing_costs + total_shipping_costs + adj_receivable;

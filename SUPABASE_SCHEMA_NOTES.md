@@ -148,6 +148,16 @@ Pending Order Costs support:
 5. Resolving a pending cost creates real confirmed `printing_cost` and/or `shipping_cost` transactions on the selected target statement.
 6. Only those resolved transaction rows affect statement totals and downstream commission generation.
 
+Settlement calculation formula:
+
+1. Net profit = platform bank payouts - printing costs - shipping costs - store expenses + net-profit adjustments.
+2. Dealer share = net profit x dealer share percentage.
+3. Company share = net profit x company share percentage.
+4. Dealer receivable = company share + printing costs + shipping costs + dealer receivable adjustments.
+5. Store expenses are paid from the dealer/store account, so they reduce net profit before the split and are not recovered from the dealer separately.
+6. Printing and shipping are company-paid costs, so they reduce net profit before the split and are then added back to dealer receivable for recovery.
+7. The existing `shareable_net_amount` column/function field is retained for compatibility and represents the corrected net profit amount.
+
 The next milestone should add database RPCs for authoritative recalculation and transactional payment allocation.
 
 ## Employee Auth + RLS QA Setup

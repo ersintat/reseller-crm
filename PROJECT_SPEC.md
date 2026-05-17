@@ -15,14 +15,15 @@ Create a React + TypeScript + Vite baseline for a dealer settlement admin dashbo
 1. `bank_payout` is NOT a dealer payment.
 2. `bank_payout` is platform payout into dealer bank account.
 3. Dealer open balance from statement `remaining_amount` (not raw transactions).
-4. `dealer_receivable_amount = company_share_amount + printing_costs + shipping_costs + dealer_receivable_adjustment`.
-5. Store expenses reduce shareable net.
-6. Printing/shipping are company-paid and passed to dealer receivable.
-7. Employee commission base = `company_share_amount - printing_costs - shipping_costs + commission_base_adjustments`.
-8. Employee commission must never be negative.
-9. Employee-created transactions default to `pending_review`.
-10. Only `confirmed` transactions affect statement totals.
-11. Payments should support FIFO and manual allocation.
+4. `net_profit = bank_payouts - printing_costs - shipping_costs - store_expenses + shareable_net_adjustments`.
+5. `dealer_receivable_amount = company_share_amount + printing_costs + shipping_costs + dealer_receivable_adjustment`.
+6. Store expenses reduce net profit before the dealer/company split and are not added back to dealer receivable.
+7. Printing/shipping reduce net profit before the split and are then passed through to dealer receivable for recovery.
+8. Employee commission base = `company_share_amount - printing_costs - shipping_costs + commission_base_adjustments`.
+9. Employee commission must never be negative.
+10. Employee-created transactions default to `pending_review`.
+11. Only `confirmed` transactions affect statement totals.
+12. Payments should support FIFO and manual allocation.
 
 ## Architecture Direction
 - Supabase-compatible architecture:

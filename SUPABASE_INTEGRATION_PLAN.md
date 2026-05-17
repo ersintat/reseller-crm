@@ -12,8 +12,9 @@ Core guardrails to preserve:
 - Dealer open balance must come from statement `remaining_amount` values, not raw transactions.
 - Only `confirmed` transactions affect statement totals.
 - Employee-created transactions default to `pending_review`.
-- Store expenses reduce shareable net.
-- Printing/shipping are passed to dealer receivable, but subtract from employee commission base.
+- Store expenses reduce net profit before the dealer/company split and are not added back to dealer receivable.
+- Printing/shipping reduce net profit before the split and are passed to dealer receivable for recovery.
+- Dealer receivable is `company_share_amount + printing_costs + shipping_costs + dealer_receivable_adjustment`.
 - Employee commissions are generated only for assigned stores.
 - Employee commission base and commission amount must never be negative.
 

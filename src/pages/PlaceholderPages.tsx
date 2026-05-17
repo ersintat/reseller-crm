@@ -83,6 +83,11 @@ const adjustmentScopes: ManualAdjustmentScope[] = [
   'employee_commission_base',
 ];
 const adjustmentDirections: ManualAdjustmentDirection[] = ['increase', 'decrease'];
+const adjustmentScopeLabels: Record<ManualAdjustmentScope, string> = {
+  shareable_net: 'Net Profit Before Split',
+  dealer_receivable_only: 'Dealer Receivable Only',
+  employee_commission_base: 'Employee Commission Base',
+};
 
 function parsePositiveNumber(value: string) {
   const parsed = Number(value);
@@ -555,7 +560,8 @@ function calculateOriginalStatementTotals(
   const totalStoreExpenses = sumType('store_expense');
   const totalPrintingCosts = sumType('printing_cost');
   const totalShippingCosts = sumType('shipping_cost');
-  const shareableNet = totalBankPayouts - totalStoreExpenses + signedAdjustment('shareable_net');
+  const shareableNet =
+    totalBankPayouts - totalPrintingCosts - totalShippingCosts - totalStoreExpenses + signedAdjustment('shareable_net');
   const dealerShare = shareableNet * dealer.dealerSharePercentage;
   const companyShare = shareableNet * dealer.companySharePercentage;
   const dealerReceivable =
@@ -1157,10 +1163,14 @@ function StatementBreakdown({ statement, dealer, transactions, allocations }: {
   const totals = calculateStatementTotals(statement, transactions, dealer, paid);
   const rows = [
     ['Platform payout', totals.total_bank_payouts],
-    [`Dealer Share Amount (${formatPercent(dealer.dealerSharePercentage)})`, totals.dealer_share_amount],
-    [`Company Share Amount (${formatPercent(dealer.companySharePercentage)})`, totals.company_share_amount],
-    ['Printing cost', totals.total_printing_costs],
-    ['Shipping cost', totals.total_shipping_costs],
+    ['Less printing costs', -totals.total_printing_costs],
+    ['Less shipping costs', -totals.total_shipping_costs],
+    ['Less store expenses', -totals.total_store_expenses],
+    ['Net Profit', totals.shareable_net_amount],
+    [`Dealer Share (${formatPercent(dealer.dealerSharePercentage)})`, totals.dealer_share_amount],
+    [`Company Share (${formatPercent(dealer.companySharePercentage)})`, totals.company_share_amount],
+    ['Printing recovery', totals.total_printing_costs],
+    ['Shipping recovery', totals.total_shipping_costs],
     ['Dealer receivable', totals.dealer_receivable_amount],
     ['Paid', totals.paid_amount],
     ['Remaining', totals.remaining_amount],
@@ -2691,7 +2701,7 @@ export function StatementDetailPage({
                       className="h-10 w-full px-3"
                     >
                       {adjustmentScopes.map((scope) => (
-                        <option key={scope}>{scope}</option>
+                        <option key={scope} value={scope}>{adjustmentScopeLabels[scope]}</option>
                       ))}
                     </select>
                   </FormLabel>
@@ -2938,7 +2948,7 @@ export function StatementDetailPage({
                       }
                     >
                       {adjustmentScopes.map((scope) => (
-                        <option key={scope}>{scope}</option>
+                        <option key={scope} value={scope}>{adjustmentScopeLabels[scope]}</option>
                       ))}
                     </select>
                   </FormLabel>
