@@ -66,6 +66,12 @@ import {
 } from '../lib/displayLabels';
 import { fetchExchangeRateToUsd } from '../lib/exchangeRateService';
 import { downloadDealerAccountStatementPdf, downloadStatementPdf } from '../lib/statementPdf';
+import {
+  defaultDateForStatement,
+  getStatementPeriodBounds,
+  isDateWithinStatementPeriod,
+  statementPeriodDateMessage,
+} from '../lib/statementPeriods';
 
 const transactionTypes: TransactionType[] = [
   'bank_payout',
@@ -745,6 +751,7 @@ function PendingOrderCostsPanel({
   });
   const [resolveForm, setResolveForm] = useState({
     statementId: defaultStatement?.id || statements[0]?.id || '',
+    transactionDate: defaultDateForStatement(defaultStatement || statements[0] || { month: new Date().toISOString().slice(0, 7) }),
     finalPrintingCost: '',
     finalShippingCost: '',
     currency: 'USD' as SupportedCurrency,
@@ -758,7 +765,7 @@ function PendingOrderCostsPanel({
   });
   const resolveRateLookup = useExchangeRateAutofill({
     currency: resolveForm.currency,
-    date: new Date().toISOString().slice(0, 10),
+    date: resolveForm.transactionDate,
     setExchangeRateToUsd: (value) => setResolveForm((previous) => ({ ...previous, exchangeRateToUsd: value })),
   });
 
@@ -805,8 +812,12 @@ function PendingOrderCostsPanel({
   const openResolve = (cost: PendingOrderCost) => {
     setError('');
     setResolving(cost);
+    const targetStatement = statements.find((statement) => statement.id === (defaultStatement?.id || cost.statementId)) || statements[0];
     setResolveForm({
-      statementId: defaultStatement?.id || cost.statementId || statements[0]?.id || '',
+      statementId: targetStatement?.id || '',
+      transactionDate: targetStatement
+        ? defaultDateForStatement(targetStatement)
+        : new Date().toISOString().slice(0, 10),
       finalPrintingCost: cost.finalPrintingCost?.toString() ?? '',
       finalShippingCost: cost.finalShippingCost?.toString() ?? '',
       currency: (cost.currency as SupportedCurrency) || 'USD',
@@ -883,6 +894,10 @@ function PendingOrderCostsPanel({
       setError('No statement exists for this period. Create a statement before resolving this cost.');
       return;
     }
+    if (!isDateWithinStatementPeriod(resolveForm.transactionDate, targetStatement)) {
+      setError(statementPeriodDateMessage(targetStatement));
+      return;
+    }
     if (finalPrintingCost === undefined || finalShippingCost === undefined) {
       setError('Final costs must be zero or greater.');
       return;
@@ -912,6 +927,7 @@ function PendingOrderCostsPanel({
       finalShippingCost,
       currency: resolveForm.currency,
       exchangeRateToUsd,
+      transactionDate: resolveForm.transactionDate,
     });
     setResolving(null);
   };
@@ -920,6 +936,13 @@ function PendingOrderCostsPanel({
     if (!window.confirm('Cancel this pending order cost?')) return;
     await onCancel?.(cost);
   };
+
+  const resolvingTargetStatement = resolving
+    ? statements.find((statement) => statement.id === resolveForm.statementId)
+    : null;
+  const resolvingDateBounds = resolvingTargetStatement
+    ? getStatementPeriodBounds(resolvingTargetStatement)
+    : null;
 
   return (
     <>
@@ -1092,9 +1115,33 @@ function PendingOrderCostsPanel({
             </div>
             <div className="grid gap-3 p-5 md:grid-cols-2">
               <FormLabel label="Target Statement">
-                <select className="h-10 w-full px-3" value={resolveForm.statementId} onChange={(event) => setResolveForm({ ...resolveForm, statementId: event.target.value })}>
+                <select
+                  className="h-10 w-full px-3"
+                  value={resolveForm.statementId}
+                  onChange={(event) => {
+                    const targetStatement = statements.find((statement) => statement.id === event.target.value);
+                    setResolveForm({
+                      ...resolveForm,
+                      statementId: event.target.value,
+                      transactionDate:
+                        targetStatement && !isDateWithinStatementPeriod(resolveForm.transactionDate, targetStatement)
+                          ? defaultDateForStatement(targetStatement)
+                          : resolveForm.transactionDate,
+                    });
+                  }}
+                >
                   {statements.map((statement) => <option key={statement.id} value={statement.id}>{statement.month}</option>)}
                 </select>
+              </FormLabel>
+              <FormLabel label="Transaction date">
+                <input
+                  className="h-10 w-full px-3"
+                  type="date"
+                  min={resolvingDateBounds?.min}
+                  max={resolvingDateBounds?.max}
+                  value={resolveForm.transactionDate}
+                  onChange={(event) => setResolveForm({ ...resolveForm, transactionDate: event.target.value })}
+                />
               </FormLabel>
               <FormLabel label="Currency">
                 <select className="h-10 w-full px-3" value={resolveForm.currency} onChange={(event) => setResolveForm(handleCurrencyChange(resolveForm, event.target.value as SupportedCurrency))}>
@@ -1800,7 +1847,7 @@ export function DealerProfilePage({
             subtitle="Allocate dealer payments with FIFO or manual statement allocation."
           >
             <div className="space-y-4 p-5">
-              <div className="grid gap-3 md:grid-cols-6">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
                 <FormLabel label="Payment date">
                   <input
                     type="date"
@@ -2348,6 +2395,15 @@ export function StatementDetailPage({
     setExchangeRateToUsd: (value) => setForm((previous) => ({ ...previous, exchangeRateToUsd: value })),
   });
 
+  useEffect(() => {
+    if (!statement) return;
+    setForm((previous) =>
+      isDateWithinStatementPeriod(previous.date, statement)
+        ? previous
+        : { ...previous, date: defaultDateForStatement(statement) },
+    );
+  }, [statement?.id]);
+
   if (!statement) return <PageShell title="Statement Detail" subtitle="Statement not found" />;
   const dealer = dealers.find((row) => row.id === statement.dealerId);
   if (!dealer) return <PageShell title="Statement Detail" subtitle="Dealer not found" />;
@@ -2365,6 +2421,7 @@ export function StatementDetailPage({
       (currentUserId ? transaction.createdBy === currentUserId : transaction.createdByRole === 'employee'));
 
   const txns = transactions.filter((transaction) => transaction.statementId === statement.id);
+  const statementDateBounds = getStatementPeriodBounds(statement);
   const paid = getEffectiveStatementPaidAmount(statement, allocations);
   const totals = calculateStatementTotals(statement, transactions, dealer, paid);
   const statementAllocations = allocations.filter((allocation) => allocation.statementId === statement.id);
@@ -2378,6 +2435,10 @@ export function StatementDetailPage({
     const exchangeRateToUsd = getExchangeRateForSave(form.currency, form.exchangeRateToUsd);
     if (!form.date || !form.type || !originalAmount) {
       setFlash('Error: required fields and positive original amount are required.');
+      return;
+    }
+    if (!isDateWithinStatementPeriod(form.date, statement)) {
+      setFlash(statementPeriodDateMessage(statement));
       return;
     }
     if (!exchangeRateToUsd) {
@@ -2474,6 +2535,10 @@ export function StatementDetailPage({
     const exchangeRateToUsd = getExchangeRateForSave(editForm.currency, editForm.exchangeRateToUsd);
     if (!editForm.date || !editForm.type || !originalAmount) {
       setFlash('Error: required fields and positive original amount are required.');
+      return;
+    }
+    if (!isDateWithinStatementPeriod(editForm.date, statement)) {
+      setFlash(statementPeriodDateMessage(statement));
       return;
     }
     if (!exchangeRateToUsd) {
@@ -2610,11 +2675,13 @@ export function StatementDetailPage({
                 Admin-created transactions are confirmed immediately.
               </div>
             )}
-            <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
               <FormLabel label="Date">
                 <input
                   type="date"
                   aria-label="Transaction date"
+                  min={statementDateBounds.min}
+                  max={statementDateBounds.max}
                   value={form.date}
                   onChange={(event) => setForm({ ...form, date: event.target.value })}
                   className="h-10 w-full px-3"
@@ -2870,11 +2937,13 @@ export function StatementDetailPage({
                 Confirmed transaction edits update statement totals.
               </p>
             </div>
-            <div className="grid gap-3 p-5 md:grid-cols-3">
+            <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-3">
               <FormLabel label="Date">
                 <input
                   type="date"
                   className="h-10 w-full px-3"
+                  min={statementDateBounds.min}
+                  max={statementDateBounds.max}
                   value={editForm.date}
                   onChange={(event) => setEditForm({ ...editForm, date: event.target.value })}
                 />
@@ -3723,7 +3792,7 @@ export function EmployeeProfilePage({
 
       <SectionCard title="Record Employee Payment" subtitle="Allocate commission payments with FIFO or manual controls.">
         <div className="space-y-4 p-5">
-          <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
             <FormLabel label="Payment date">
               <input
                 type="date"

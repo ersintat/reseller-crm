@@ -62,8 +62,8 @@ export function SectionCard({
   return (
     <section className={`bg-white border border-psnsMist rounded-2xl shadow-sm overflow-hidden ${className}`}>
       <div className="px-5 py-4 border-b border-psnsMist bg-gradient-to-b from-white to-slate-50/60">
-        <div className="flex items-start justify-between gap-4">
-          <div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
             <h3 className="text-base font-semibold text-slate-950">{title}</h3>
             {subtitle && <p className="text-sm text-slate-500 mt-1">{subtitle}</p>}
           </div>
@@ -122,7 +122,7 @@ export function EmptyState({
 
 export function DataTable({ children }: { children: ReactNode }) {
   return (
-    <div className="max-w-full overflow-x-auto overscroll-x-contain lg:overflow-x-visible">
+    <div className="max-w-full overflow-x-auto overscroll-x-contain">
       <table className="w-full border-separate border-spacing-0 text-sm">{children}</table>
     </div>
   );

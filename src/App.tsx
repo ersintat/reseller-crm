@@ -52,6 +52,7 @@ import {
   type RecordEmployeePaymentInput,
   type UpdateTransactionInput,
 } from './lib/settlementActivityService';
+import { isDateWithinStatementPeriod, statementPeriodDateMessage } from './lib/statementPeriods';
 
 const initialEmployeeCommissions = generateEmployeeCommissionsForStatements(
   initialStatements,
@@ -789,6 +790,10 @@ export function App() {
     input: CreateTransactionInput,
   ) => {
     if (!usingSupabaseActivityData) return;
+    if (!isDateWithinStatementPeriod(input.date, statement)) {
+      setFlash(statementPeriodDateMessage(statement));
+      throw new Error(statementPeriodDateMessage(statement));
+    }
 
     try {
       const status: TransactionStatus =
@@ -843,6 +848,11 @@ export function App() {
   ) => {
     if (!canCurrentUserMutateTransaction(transaction, 'edit')) {
       setFlash('You do not have permission to edit this transaction.');
+      return false;
+    }
+    const statement = activeStatements.find((row) => row.id === transaction.statementId);
+    if (patch.date && statement && !isDateWithinStatementPeriod(patch.date, statement)) {
+      setFlash(statementPeriodDateMessage(statement));
       return false;
     }
 
@@ -1041,6 +1051,10 @@ export function App() {
 
   const handleResolvePendingOrderCost = async (input: ResolvePendingOrderCostInput) => {
     if (role !== 'admin') return;
+    if (!isDateWithinStatementPeriod(input.transactionDate, input.statement)) {
+      setFlash(statementPeriodDateMessage(input.statement));
+      return;
+    }
 
     try {
       if (usingSupabaseActivityData) {
@@ -1049,7 +1063,7 @@ export function App() {
         setSupabaseTransactions((previous) => [...resolved.transactions, ...(previous ?? [])]);
       } else {
         const now = new Date().toISOString();
-        const transactionDate = now.slice(0, 10);
+        const transactionDate = input.transactionDate;
         const nextTransactions: SettlementTransaction[] = [];
         const existingPrintingResolved = (input.pendingCost.finalPrintingCost ?? 0) > 0;
         const existingShippingResolved = (input.pendingCost.finalShippingCost ?? 0) > 0;

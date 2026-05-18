@@ -20,6 +20,7 @@ import {
   TransactionStatus,
   TransactionType,
 } from '../types';
+import { isDateWithinStatementPeriod, statementPeriodDateMessage } from './statementPeriods';
 
 interface StatementRow {
   id: string;
@@ -238,6 +239,7 @@ export interface ResolvePendingOrderCostInput {
   finalShippingCost?: number | null;
   currency: string;
   exchangeRateToUsd: number;
+  transactionDate: string;
 }
 
 const toNumber = (value: number | string | null | undefined) => Number(value ?? 0);
@@ -682,12 +684,15 @@ export async function resolvePendingOrderCost({
   finalShippingCost,
   currency,
   exchangeRateToUsd,
+  transactionDate,
 }: ResolvePendingOrderCostInput): Promise<{
   pendingCost: PendingOrderCost;
   transactions: SettlementTransaction[];
 }> {
+  if (!isDateWithinStatementPeriod(transactionDate, statement)) {
+    throw new Error(statementPeriodDateMessage(statement));
+  }
   const createdTransactions: SettlementTransaction[] = [];
-  const transactionDate = new Date().toISOString().slice(0, 10);
   const existingPrintingResolved = (pendingCost.finalPrintingCost ?? 0) > 0;
   const existingShippingResolved = (pendingCost.finalShippingCost ?? 0) > 0;
   const nextPrintingCost = finalPrintingCost ?? pendingCost.finalPrintingCost ?? null;
@@ -767,6 +772,9 @@ export async function createTransaction({
   role: Role;
 }): Promise<SettlementTransaction> {
   if (!supabase) throw new Error('Supabase is not configured.');
+  if (!isDateWithinStatementPeriod(input.date, statement)) {
+    throw new Error(statementPeriodDateMessage(statement));
+  }
   const userId = await currentUserId();
   const status: TransactionStatus = role === 'admin' ? 'confirmed' : input.status ?? 'pending_review';
   const money = normalizeMoneyFields(input);

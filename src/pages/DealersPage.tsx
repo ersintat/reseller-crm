@@ -22,7 +22,7 @@ export function DealersPage({ dealers, statements, transactions, allocations, st
                 key={dealer.id}
                 className="rounded-2xl border border-psnsMist bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow-md"
               >
-                <div className="grid gap-4 lg:grid-cols-[minmax(220px,1fr)_minmax(440px,560px)_88px] lg:items-stretch">
+                <div className="grid gap-4 xl:grid-cols-[minmax(220px,1fr)_minmax(440px,560px)_88px] xl:items-stretch">
                   <div className="flex min-w-0 flex-col justify-center">
                     <div className="flex flex-wrap items-center gap-2">
                       <Link className="text-base font-semibold text-indigoBrand hover:text-psnsOrange" to={`/dealers/${dealer.id}`}>
@@ -51,9 +51,9 @@ export function DealersPage({ dealers, statements, transactions, allocations, st
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center justify-start lg:justify-end">
+                  <div className="flex items-center justify-start xl:justify-end">
                     <Link
-                      className="inline-flex h-9 w-full items-center justify-center rounded-lg border border-psnsMist bg-white px-3.5 text-sm font-semibold text-indigoBrand shadow-sm transition hover:bg-slate-50 sm:w-auto lg:w-[72px]"
+                      className="inline-flex h-9 w-full items-center justify-center rounded-lg border border-psnsMist bg-white px-3.5 text-sm font-semibold text-indigoBrand shadow-sm transition hover:bg-slate-50 sm:w-auto xl:w-[72px]"
                       to={`/dealers/${dealer.id}`}
                     >
                       View
